@@ -1,9 +1,10 @@
 {
-  "name": "skills",
-  "version": "1.5.3",
-  "description": "The open agent skills ecosystem",
+  "name": "bzskills",
+  "version": "1.5.1",
+  "description": "Skills Hub CLI for installing agent skills",
   "type": "module",
   "bin": {
+    "bzskills": "./bin/cli.mjs",
     "skills": "./bin/cli.mjs",
     "add-skill": "./bin/cli.mjs"
   },
@@ -36,7 +37,6 @@
     "agent-skills",
     "skills",
     "ai-agents",
-    "aider-desk",
     "amp",
     "antigravity",
     "augment",
@@ -44,10 +44,7 @@
     "claude-code",
     "openclaw",
     "cline",
-    "codearts-agent",
     "codebuddy",
-    "codemaker",
-    "codestudio",
     "codex",
     "command-code",
     "continue",
@@ -55,11 +52,8 @@
     "crush",
     "cursor",
     "deepagents",
-    "devin",
-    "dexto",
     "droid",
     "firebender",
-    "forgecode",
     "gemini-cli",
     "github-copilot",
     "goose",
@@ -78,9 +72,7 @@
     "qoder",
     "qwen-code",
     "replit",
-    "rovodev",
     "roo",
-    "tabnine-cli",
     "trae",
     "trae-cn",
     "warp",
@@ -93,11 +85,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vercel-labs/skills.git"
+    "url": "git+https://github.com/baizhicloud/skills-hub.git"
   },
-  "homepage": "https://github.com/vercel-labs/skills#readme",
+  "homepage": "https://github.com/baizhicloud/skills-hub#readme",
   "bugs": {
-    "url": "https://github.com/vercel-labs/skills/issues"
+    "url": "https://github.com/baizhicloud/skills-hub/issues"
   },
   "author": "",
   "license": "MIT",

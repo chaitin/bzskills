@@ -1,6 +1,12 @@
 import { isAbsolute, resolve } from 'path';
 import type { ParsedSource } from './types.ts';
 
+export const DEFAULT_SKILLS_HUB_URL = 'https://skillshub.app.baizhi.cloud';
+
+export function getSkillsHubUrl(): string {
+  return (process.env.SKILLS_HUB_URL || DEFAULT_SKILLS_HUB_URL).replace(/\/$/, '');
+}
+
 /**
  * Extract owner/repo (or group/subgroup/repo for GitLab) from a parsed source
  * for lockfile tracking and telemetry.
@@ -10,6 +16,10 @@ import type { ParsedSource } from './types.ts';
 export function getOwnerRepo(parsed: ParsedSource): string | null {
   if (parsed.type === 'local') {
     return null;
+  }
+
+  if (parsed.type === 'hub' && parsed.owner && parsed.repo) {
+    return `${parsed.owner}/${parsed.repo}`;
   }
 
   // Handle Git SSH URLs (e.g., git@gitlab.com:owner/repo.git, git@github.com:owner/repo.git)
@@ -121,7 +131,7 @@ function isLocalPath(input: string): boolean {
 
 /**
  * Parse a source string into a structured format
- * Supports: local paths, GitHub URLs, GitLab URLs, GitHub shorthand, well-known URLs, and direct git URLs
+ * Supports: local paths, GitHub URLs, GitLab URLs, Hub shorthand, well-known URLs, and direct git URLs
  */
 // Source aliases: map common shorthand to canonical source
 const SOURCE_ALIASES: Record<string, string> = {
@@ -242,11 +252,11 @@ export function parseSource(input: string): ParsedSource {
     input = alias;
   }
 
-  // Prefix shorthand: github:owner/repo -> owner/repo (handled by existing shorthand logic)
+  // Prefix shorthand: github:owner/repo -> explicit GitHub source
   // Also supports github:owner/repo/subpath and github:owner/repo@skill
   const githubPrefixMatch = input.match(/^github:(.+)$/);
   if (githubPrefixMatch) {
-    return parseSource(appendFragmentRef(githubPrefixMatch[1]!, fragmentRef, fragmentSkillFilter));
+    return parseGitHubShorthand(githubPrefixMatch[1]!, fragmentRef, fragmentSkillFilter);
   }
 
   // Prefix shorthand: gitlab:owner/repo -> https://gitlab.com/owner/repo
@@ -343,30 +353,29 @@ export function parseSource(input: string): ParsedSource {
     }
   }
 
-  // GitHub shorthand: owner/repo, owner/repo/path/to/skill, or owner/repo@skill-name
+  // Hub shorthand: owner/repo, owner/repo/path/to/skill, or owner/repo@skill-name
   // Exclude paths that start with . or / to avoid matching local paths
   // First check for @skill syntax: owner/repo@skill-name
   const atSkillMatch = input.match(/^([^/]+)\/([^/@]+)@(.+)$/);
   if (atSkillMatch && !input.includes(':') && !input.startsWith('.') && !input.startsWith('/')) {
     const [, owner, repo, skillFilter] = atSkillMatch;
-    return {
-      type: 'github',
-      url: `https://github.com/${owner}/${repo}.git`,
-      ...(fragmentRef ? { ref: fragmentRef } : {}),
-      skillFilter: fragmentSkillFilter || skillFilter,
-    };
+    return hubSource(owner!, repo!, undefined, fragmentSkillFilter || skillFilter);
   }
 
   const shorthandMatch = input.match(/^([^/]+)\/([^/]+)(?:\/(.+?))?\/?$/);
   if (shorthandMatch && !input.includes(':') && !input.startsWith('.') && !input.startsWith('/')) {
     const [, owner, repo, subpath] = shorthandMatch;
-    return {
-      type: 'github',
-      url: `https://github.com/${owner}/${repo}.git`,
-      ...(fragmentRef ? { ref: fragmentRef } : {}),
-      subpath: subpath ? sanitizeSubpath(subpath) : subpath,
-      ...(fragmentSkillFilter ? { skillFilter: fragmentSkillFilter } : {}),
-    };
+    return hubSource(
+      owner!,
+      repo!,
+      subpath ? sanitizeSubpath(subpath) : subpath,
+      fragmentSkillFilter
+    );
+  }
+
+  const nativeHubURL = parseNativeHubURL(input, fragmentSkillFilter);
+  if (nativeHubURL) {
+    return nativeHubURL;
   }
 
   // Well-known skills: arbitrary HTTP(S) URLs that aren't GitHub/GitLab
@@ -380,6 +389,82 @@ export function parseSource(input: string): ParsedSource {
   }
 
   // Fallback: treat as direct git URL
+  return {
+    type: 'git',
+    url: input,
+    ...(fragmentRef ? { ref: fragmentRef } : {}),
+  };
+}
+
+function hubSource(
+  owner: string,
+  repo: string,
+  subpath?: string,
+  skillFilter?: string
+): ParsedSource {
+  return {
+    type: 'hub',
+    url: `${getSkillsHubUrl()}/openapi/v1/skills/${owner}/${repo}`,
+    owner,
+    repo,
+    ...(subpath ? { subpath } : {}),
+    ...(skillFilter ? { skillFilter } : {}),
+  };
+}
+
+function parseNativeHubURL(input: string, fragmentSkillFilter?: string): ParsedSource | null {
+  if (!input.startsWith('http://') && !input.startsWith('https://')) {
+    return null;
+  }
+  try {
+    const parsed = new URL(input);
+    const match = parsed.pathname.match(
+      /^\/openapi\/v1\/skills\/([^/]+)\/([^/]+)(?:\/skills\/([^/]+))?\/?$/
+    );
+    if (!match) return null;
+    const [, owner, repo, skillName] = match;
+    return {
+      type: 'hub',
+      url: `${parsed.origin}/openapi/v1/skills/${owner}/${repo}`,
+      owner,
+      repo,
+      ...(fragmentSkillFilter || skillName
+        ? { skillFilter: fragmentSkillFilter || skillName }
+        : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseGitHubShorthand(
+  input: string,
+  fragmentRef?: string,
+  fragmentSkillFilter?: string
+): ParsedSource {
+  const atSkillMatch = input.match(/^([^/]+)\/([^/@]+)@(.+)$/);
+  if (atSkillMatch) {
+    const [, owner, repo, skillFilter] = atSkillMatch;
+    return {
+      type: 'github',
+      url: `https://github.com/${owner}/${repo}.git`,
+      ...(fragmentRef ? { ref: fragmentRef } : {}),
+      skillFilter: fragmentSkillFilter || skillFilter,
+    };
+  }
+
+  const shorthandMatch = input.match(/^([^/]+)\/([^/]+)(?:\/(.+?))?\/?$/);
+  if (shorthandMatch) {
+    const [, owner, repo, subpath] = shorthandMatch;
+    return {
+      type: 'github',
+      url: `https://github.com/${owner}/${repo}.git`,
+      ...(fragmentRef ? { ref: fragmentRef } : {}),
+      subpath: subpath ? sanitizeSubpath(subpath) : subpath,
+      ...(fragmentSkillFilter ? { skillFilter: fragmentSkillFilter } : {}),
+    };
+  }
+
   return {
     type: 'git',
     url: input,

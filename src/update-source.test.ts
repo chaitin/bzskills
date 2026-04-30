@@ -3,6 +3,7 @@ import {
   buildLocalUpdateSource,
   buildUpdateInstallSource,
   formatSourceInput,
+  hubEnvFromSourceUrl,
 } from './update-source.ts';
 
 describe('update-source', () => {
@@ -49,40 +50,85 @@ describe('update-source', () => {
       });
       expect(result).toBe('https://github.com/owner/repo.git#feature/install');
     });
+
+    it('builds Hub install source with a skill filter', () => {
+      const result = buildUpdateInstallSource(
+        {
+          source: 'owner/repo',
+          sourceType: 'hub',
+          sourceUrl: 'https://hub.example.com/openapi/v1/skills/owner/repo/skills/my-skill',
+        },
+        'my-skill'
+      );
+      expect(result).toBe('owner/repo@my-skill');
+    });
+
+    it('ignores legacy Hub refs when building skill update sources', () => {
+      const result = buildUpdateInstallSource(
+        {
+          source: 'owner/repo',
+          sourceType: 'hub',
+          sourceUrl: 'https://hub.example.com/openapi/v1/skills/owner/repo/skills/my-skill',
+          ref: 'feature/install',
+        },
+        'my-skill'
+      );
+      expect(result).toBe('owner/repo@my-skill');
+    });
   });
 
   describe('buildLocalUpdateSource', () => {
-    it('appends skill folder from skillPath with ref', () => {
-      const result = buildLocalUpdateSource({
-        source: 'owner/repo',
-        ref: 'main',
-        skillPath: 'skills/my-skill/SKILL.md',
-      });
-      expect(result).toBe('owner/repo/skills/my-skill#main');
+    it('builds local Hub update source with a skill filter', () => {
+      const result = buildLocalUpdateSource(
+        {
+          source: 'owner/repo',
+          sourceType: 'hub',
+        },
+        'my-skill'
+      );
+      expect(result).toBe('owner/repo@my-skill');
     });
 
-    it('appends skill folder from skillPath without ref', () => {
-      const result = buildLocalUpdateSource({
-        source: 'owner/repo',
-        skillPath: 'skills/my-skill/SKILL.md',
-      });
-      expect(result).toBe('owner/repo/skills/my-skill');
-    });
-
-    it('keeps root-level skillPath from collapsing to trailing slash', () => {
-      const result = buildLocalUpdateSource({
-        source: 'owner/repo',
-        skillPath: 'SKILL.md',
-      });
-      expect(result).toBe('owner/repo');
-    });
-
-    it('falls back to bare source when skillPath is missing', () => {
-      const result = buildLocalUpdateSource({
-        source: 'owner/repo',
-        ref: 'main',
-      });
+    it('preserves non-Hub local update source behavior', () => {
+      const result = buildLocalUpdateSource(
+        {
+          source: 'owner/repo',
+          sourceType: 'github',
+          ref: 'main',
+        },
+        'ignored'
+      );
       expect(result).toBe('owner/repo#main');
+    });
+
+    it('uses sourceUrl when a well-known local lock recorded the /openapi URL', () => {
+      const result = buildLocalUpdateSource(
+        {
+          source: 'baizhicloud/foo',
+          sourceUrl: 'https://hub.example.com/openapi/baizhicloud/foo',
+          sourceType: 'well-known',
+        },
+        'ignored'
+      );
+      expect(result).toBe('https://hub.example.com/openapi/baizhicloud/foo');
+    });
+  });
+
+  describe('hubEnvFromSourceUrl', () => {
+    it('extracts SKILLS_HUB_URL from native Hub package URLs', () => {
+      expect(hubEnvFromSourceUrl('https://hub.example.com/openapi/v1/skills/owner/repo')).toEqual({
+        SKILLS_HUB_URL: 'https://hub.example.com',
+      });
+    });
+
+    it('extracts SKILLS_HUB_URL from native Hub skill URLs', () => {
+      expect(
+        hubEnvFromSourceUrl('https://hub.example.com/openapi/v1/skills/owner/repo/skills/my-skill')
+      ).toEqual({ SKILLS_HUB_URL: 'https://hub.example.com' });
+    });
+
+    it('ignores non-native Hub URLs', () => {
+      expect(hubEnvFromSourceUrl('https://hub.example.com/owner/repo')).toEqual({});
     });
   });
 });

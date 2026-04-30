@@ -6,7 +6,7 @@ import { execSync } from 'child_process';
 
 const AGENTS_DIR = '.agents';
 const LOCK_FILE = '.skill-lock.json';
-const CURRENT_VERSION = 3; // Bumped from 2 to 3 for folder hash support (GitHub tree SHA)
+const CURRENT_VERSION = 3; // Bumped from 2 to 3 for folder hash support
 
 /**
  * Represents a single installed skill entry in the lock file.
@@ -23,9 +23,8 @@ export interface SkillLockEntry {
   /** Subpath within the source repo, if applicable */
   skillPath?: string;
   /**
-   * GitHub tree SHA for the entire skill folder.
+   * GitHub tree SHA or Hub file-set digest for the entire skill folder.
    * This hash changes when ANY file in the skill folder changes.
-   * Fetched via GitHub Trees API by the telemetry server.
    */
   skillFolderHash: string;
   /** ISO timestamp when the skill was first installed */

@@ -12,3 +12,5 @@ export {
   type WellKnownSkillEntry,
   type WellKnownSkill,
 } from './wellknown.ts';
+
+export { HubProvider, hubProvider, type HubFetchOptions } from './hub.ts';

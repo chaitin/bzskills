@@ -13,6 +13,8 @@ export interface RemoteSkill {
   installName: string;
   /** The original source URL */
   sourceUrl: string;
+  /** Upstream commit SHA reported by Skills Hub, when available */
+  upstreamCommitSha?: string;
   /** Any additional metadata from frontmatter */
   metadata?: Record<string, unknown>;
 }

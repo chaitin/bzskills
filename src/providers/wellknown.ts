@@ -19,6 +19,8 @@ export interface WellKnownSkillEntry {
   description: string;
   /** Array of all files in the skill directory. */
   files: string[];
+  /** Optional digest for all files in the skill directory. */
+  digest?: string;
 }
 
 /**
@@ -309,13 +311,18 @@ export class WellKnownProvider implements HostProvider {
         }
       }
 
+      const metadata =
+        data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
+          ? (data.metadata as Record<string, unknown>)
+          : undefined;
+
       return {
         name: sanitizeMetadata(data.name as string),
         description: sanitizeMetadata(data.description as string),
         content,
         installName: entry.name,
         sourceUrl: skillMdUrl,
-        metadata: data.metadata,
+        metadata,
         files,
         indexEntry: entry,
       };

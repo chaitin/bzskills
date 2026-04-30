@@ -72,9 +72,19 @@ describe('source-parser', () => {
     });
   });
 
-  describe('Existing GitHub Support', () => {
-    it('parses github shorthand', () => {
+  describe('Hub shorthand and explicit GitHub support', () => {
+    it('parses bare owner/repo as Hub shorthand', () => {
       const result = parseSource('vercel-labs/agent-skills');
+      expect(result).toEqual({
+        type: 'hub',
+        url: 'https://skillshub.app.baizhi.cloud/openapi/v1/skills/vercel-labs/agent-skills',
+        owner: 'vercel-labs',
+        repo: 'agent-skills',
+      });
+    });
+
+    it('parses explicit github shorthand', () => {
+      const result = parseSource('github:vercel-labs/agent-skills');
       expect(result).toEqual({
         type: 'github',
         url: 'https://github.com/vercel-labs/agent-skills.git',
@@ -100,22 +110,46 @@ describe('source-parser', () => {
       });
     });
 
-    it('parses github shorthand with #branch', () => {
+    it('ignores refs on hub shorthand', () => {
       const result = parseSource('vercel-labs/agent-skills#feature/install');
       expect(result).toEqual({
-        type: 'github',
-        url: 'https://github.com/vercel-labs/agent-skills.git',
-        ref: 'feature/install',
-        subpath: undefined,
+        type: 'hub',
+        url: 'https://skillshub.app.baizhi.cloud/openapi/v1/skills/vercel-labs/agent-skills',
+        owner: 'vercel-labs',
+        repo: 'agent-skills',
       });
     });
 
-    it('parses github shorthand with trailing slash', () => {
+    it('parses explicit native Hub package URLs', () => {
+      const result = parseSource('https://hub.example.com/openapi/v1/skills/owner/repo');
+      expect(result).toEqual({
+        type: 'hub',
+        url: 'https://hub.example.com/openapi/v1/skills/owner/repo',
+        owner: 'owner',
+        repo: 'repo',
+      });
+    });
+
+    it('parses explicit native Hub skill URLs as filtered Hub sources', () => {
+      const result = parseSource(
+        'https://hub.example.com/openapi/v1/skills/owner/repo/skills/my-skill'
+      );
+      expect(result).toEqual({
+        type: 'hub',
+        url: 'https://hub.example.com/openapi/v1/skills/owner/repo',
+        owner: 'owner',
+        repo: 'repo',
+        skillFilter: 'my-skill',
+      });
+    });
+
+    it('parses hub shorthand with trailing slash', () => {
       const result = parseSource('vercel-labs/agent-skills/');
       expect(result).toEqual({
-        type: 'github',
-        url: 'https://github.com/vercel-labs/agent-skills.git',
-        subpath: undefined,
+        type: 'hub',
+        url: 'https://skillshub.app.baizhi.cloud/openapi/v1/skills/vercel-labs/agent-skills',
+        owner: 'vercel-labs',
+        repo: 'agent-skills',
       });
     });
 

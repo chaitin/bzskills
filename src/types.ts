@@ -1,5 +1,4 @@
 export type AgentType =
-  | 'aider-desk'
   | 'amp'
   | 'antigravity'
   | 'augment'
@@ -7,10 +6,7 @@ export type AgentType =
   | 'claude-code'
   | 'openclaw'
   | 'cline'
-  | 'codearts-agent'
   | 'codebuddy'
-  | 'codemaker'
-  | 'codestudio'
   | 'codex'
   | 'command-code'
   | 'continue'
@@ -18,11 +14,8 @@ export type AgentType =
   | 'crush'
   | 'cursor'
   | 'deepagents'
-  | 'devin'
-  | 'dexto'
   | 'droid'
   | 'firebender'
-  | 'forgecode'
   | 'gemini-cli'
   | 'github-copilot'
   | 'goose'
@@ -43,8 +36,6 @@ export type AgentType =
   | 'qwen-code'
   | 'replit'
   | 'roo'
-  | 'rovodev'
-  | 'tabnine-cli'
   | 'trae'
   | 'trae-cn'
   | 'warp'
@@ -77,8 +68,10 @@ export interface AgentConfig {
 }
 
 export interface ParsedSource {
-  type: 'github' | 'gitlab' | 'git' | 'local' | 'well-known';
+  type: 'github' | 'gitlab' | 'git' | 'local' | 'well-known' | 'hub';
   url: string;
+  owner?: string;
+  repo?: string;
   subpath?: string;
   localPath?: string;
   ref?: string;

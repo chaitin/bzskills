@@ -13,13 +13,15 @@ import { runList } from './list.ts';
 import { removeCommand, parseRemoveOptions } from './remove.ts';
 import { sanitizeMetadata } from './sanitize.ts';
 import { runSync, parseSyncOptions } from './sync.ts';
-import { track, flushTelemetry } from './telemetry.ts';
+import { track } from './telemetry.ts';
 import { fetchSkillFolderHash, getGitHubToken } from './skill-lock.ts';
 import { readLocalLock, type LocalSkillLockEntry } from './local-lock.ts';
+import { hubProvider } from './providers/index.ts';
 import {
   buildUpdateInstallSource,
   buildLocalUpdateSource,
   formatSourceInput,
+  hubEnvFromSourceUrl,
 } from './update-source.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -44,12 +46,12 @@ const DIM = '\x1b[38;5;102m'; // darker gray for secondary text
 const TEXT = '\x1b[38;5;145m'; // lighter gray for primary text
 
 const LOGO_LINES = [
-  '███████╗██╗  ██╗██╗██╗     ██╗     ███████╗',
-  '██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝',
-  '███████╗█████╔╝ ██║██║     ██║     ███████╗',
-  '╚════██║██╔═██╗ ██║██║     ██║     ╚════██║',
-  '███████║██║  ██╗██║███████╗███████╗███████║',
-  '╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝',
+  '██████╗ ███████╗███████╗██╗  ██╗██╗██╗     ██╗     ███████╗',
+  '██╔══██╗╚══███╔╝██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝',
+  '██████╔╝  ███╔╝ ███████╗█████╔╝ ██║██║     ██║     ███████╗',
+  '██╔══██╗ ███╔╝  ╚════██║██╔═██╗ ██║██║     ██║     ╚════██║',
+  '██████╔╝███████╗███████║██║  ██╗██║███████╗███████╗███████║',
+  '╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝',
 ];
 
 // 256-color middle grays - visible on both light and dark backgrounds
@@ -75,41 +77,41 @@ function showBanner(): void {
   console.log(`${DIM}The open agent skills ecosystem${RESET}`);
   console.log();
   console.log(
-    `  ${DIM}$${RESET} ${TEXT}npx skills add ${DIM}<package>${RESET}        ${DIM}Add a new skill${RESET}`
+    `  ${DIM}$${RESET} ${TEXT}npx bzskills add ${DIM}<package>${RESET}      ${DIM}Add a new skill${RESET}`
   );
   console.log(
-    `  ${DIM}$${RESET} ${TEXT}npx skills remove${RESET}               ${DIM}Remove installed skills${RESET}`
+    `  ${DIM}$${RESET} ${TEXT}npx bzskills remove${RESET}             ${DIM}Remove installed skills${RESET}`
   );
   console.log(
-    `  ${DIM}$${RESET} ${TEXT}npx skills list${RESET}                 ${DIM}List installed skills${RESET}`
+    `  ${DIM}$${RESET} ${TEXT}npx bzskills list${RESET}               ${DIM}List installed skills${RESET}`
   );
   console.log(
-    `  ${DIM}$${RESET} ${TEXT}npx skills find ${DIM}[query]${RESET}         ${DIM}Search for skills${RESET}`
+    `  ${DIM}$${RESET} ${TEXT}npx bzskills find ${DIM}[query]${RESET}       ${DIM}Search for skills${RESET}`
   );
   console.log();
   console.log(
-    `  ${DIM}$${RESET} ${TEXT}npx skills update${RESET}               ${DIM}Update installed skills${RESET}`
+    `  ${DIM}$${RESET} ${TEXT}npx bzskills update${RESET}             ${DIM}Update installed skills${RESET}`
   );
   console.log();
   console.log(
-    `  ${DIM}$${RESET} ${TEXT}npx skills experimental_install${RESET} ${DIM}Restore from skills-lock.json${RESET}`
+    `  ${DIM}$${RESET} ${TEXT}npx bzskills experimental_install${RESET} ${DIM}Restore from skills-lock.json${RESET}`
   );
   console.log(
-    `  ${DIM}$${RESET} ${TEXT}npx skills init ${DIM}[name]${RESET}          ${DIM}Create a new skill${RESET}`
+    `  ${DIM}$${RESET} ${TEXT}npx bzskills init ${DIM}[name]${RESET}        ${DIM}Create a new skill${RESET}`
   );
   console.log(
-    `  ${DIM}$${RESET} ${TEXT}npx skills experimental_sync${RESET}    ${DIM}Sync skills from node_modules${RESET}`
+    `  ${DIM}$${RESET} ${TEXT}npx bzskills experimental_sync${RESET}  ${DIM}Sync skills from node_modules${RESET}`
   );
   console.log();
-  console.log(`${DIM}try:${RESET} npx skills add vercel-labs/agent-skills`);
+  console.log(`${DIM}try:${RESET} npx bzskills add vercel-labs/agent-skills`);
   console.log();
-  console.log(`Discover more skills at ${TEXT}https://skills.sh/${RESET}`);
+  console.log(`Discover more skills through your configured Skills Hub.`);
   console.log();
 }
 
 function showHelp(): void {
   console.log(`
-${BOLD}Usage:${RESET} skills <command> [options]
+${BOLD}Usage:${RESET} bzskills <command> [options]
 
 ${BOLD}Manage Skills:${RESET}
   add <package>        Add a skill package (alias: a)
@@ -126,6 +128,7 @@ ${BOLD}Update Options:${RESET}
   -g, --global           Update global skills only
   -p, --project          Update project skills only
   -y, --yes              Skip scope prompt (auto-detect: project if in a project, else global)
+  -f, --force            Force refresh Hub-backed skills before comparing/installing
 
 ${BOLD}Project:${RESET}
   experimental_install Restore skills from skills-lock.json
@@ -138,6 +141,7 @@ ${BOLD}Add Options:${RESET}
   -s, --skill <skills>   Specify skill names to install (use '*' for all skills)
   -l, --list             List available skills in the repository without installing
   -y, --yes              Skip confirmation prompts
+  -f, --force            Force refresh through Skills Hub when supported
   --copy                 Copy files instead of symlinking to agent directories
   --all                  Shorthand for --skill '*' --agent '*' -y
   --full-depth           Search all subdirectories even when a root SKILL.md exists
@@ -163,34 +167,34 @@ ${BOLD}Options:${RESET}
   --version, -v     Show version number
 
 ${BOLD}Examples:${RESET}
-  ${DIM}$${RESET} skills add vercel-labs/agent-skills
-  ${DIM}$${RESET} skills add vercel-labs/agent-skills -g
-  ${DIM}$${RESET} skills add vercel-labs/agent-skills --agent claude-code cursor
-  ${DIM}$${RESET} skills add vercel-labs/agent-skills --skill pr-review commit
-  ${DIM}$${RESET} skills remove                        ${DIM}# interactive remove${RESET}
-  ${DIM}$${RESET} skills remove web-design             ${DIM}# remove by name${RESET}
-  ${DIM}$${RESET} skills rm --global frontend-design
-  ${DIM}$${RESET} skills list                          ${DIM}# list project skills${RESET}
-  ${DIM}$${RESET} skills ls -g                         ${DIM}# list global skills${RESET}
-  ${DIM}$${RESET} skills ls -a claude-code             ${DIM}# filter by agent${RESET}
-  ${DIM}$${RESET} skills ls --json                      ${DIM}# JSON output${RESET}
-  ${DIM}$${RESET} skills find                          ${DIM}# interactive search${RESET}
-  ${DIM}$${RESET} skills find typescript               ${DIM}# search by keyword${RESET}
-  ${DIM}$${RESET} skills update
-  ${DIM}$${RESET} skills update my-skill             ${DIM}# update a single skill${RESET}
-  ${DIM}$${RESET} skills update -g                    ${DIM}# update global skills only${RESET}
-  ${DIM}$${RESET} skills experimental_install            ${DIM}# restore from skills-lock.json${RESET}
-  ${DIM}$${RESET} skills init my-skill
-  ${DIM}$${RESET} skills experimental_sync              ${DIM}# sync from node_modules${RESET}
-  ${DIM}$${RESET} skills experimental_sync -y           ${DIM}# sync without prompts${RESET}
+  ${DIM}$${RESET} bzskills add vercel-labs/agent-skills
+  ${DIM}$${RESET} bzskills add github:vercel-labs/agent-skills -g
+  ${DIM}$${RESET} bzskills add vercel-labs/agent-skills --agent claude-code cursor
+  ${DIM}$${RESET} bzskills add vercel-labs/agent-skills --skill pr-review commit
+  ${DIM}$${RESET} bzskills remove                        ${DIM}# interactive remove${RESET}
+  ${DIM}$${RESET} bzskills remove web-design             ${DIM}# remove by name${RESET}
+  ${DIM}$${RESET} bzskills rm --global frontend-design
+  ${DIM}$${RESET} bzskills list                          ${DIM}# list project skills${RESET}
+  ${DIM}$${RESET} bzskills ls -g                         ${DIM}# list global skills${RESET}
+  ${DIM}$${RESET} bzskills ls -a claude-code             ${DIM}# filter by agent${RESET}
+  ${DIM}$${RESET} bzskills ls --json                      ${DIM}# JSON output${RESET}
+  ${DIM}$${RESET} bzskills find                          ${DIM}# interactive search${RESET}
+  ${DIM}$${RESET} bzskills find typescript               ${DIM}# search by keyword${RESET}
+  ${DIM}$${RESET} bzskills update
+  ${DIM}$${RESET} bzskills update my-skill             ${DIM}# update a single skill${RESET}
+  ${DIM}$${RESET} bzskills update -g                    ${DIM}# update global skills only${RESET}
+  ${DIM}$${RESET} bzskills experimental_install            ${DIM}# restore from skills-lock.json${RESET}
+  ${DIM}$${RESET} bzskills init my-skill
+  ${DIM}$${RESET} bzskills experimental_sync              ${DIM}# sync from node_modules${RESET}
+  ${DIM}$${RESET} bzskills experimental_sync -y           ${DIM}# sync without prompts${RESET}
 
-Discover more skills at ${TEXT}https://skills.sh/${RESET}
+Discover more skills through your configured Skills Hub.
 `);
 }
 
 function showRemoveHelp(): void {
   console.log(`
-${BOLD}Usage:${RESET} skills remove [skills...] [options]
+${BOLD}Usage:${RESET} bzskills remove [skills...] [options]
 
 ${BOLD}Description:${RESET}
   Remove installed skills from agents. If no skill names are provided,
@@ -207,15 +211,15 @@ ${BOLD}Options:${RESET}
   --all              Shorthand for --skill '*' --agent '*' -y
 
 ${BOLD}Examples:${RESET}
-  ${DIM}$${RESET} skills remove                           ${DIM}# interactive selection${RESET}
-  ${DIM}$${RESET} skills remove my-skill                   ${DIM}# remove specific skill${RESET}
-  ${DIM}$${RESET} skills remove skill1 skill2 -y           ${DIM}# remove multiple skills${RESET}
-  ${DIM}$${RESET} skills remove --global my-skill          ${DIM}# remove from global scope${RESET}
-  ${DIM}$${RESET} skills rm --agent claude-code my-skill   ${DIM}# remove from specific agent${RESET}
-  ${DIM}$${RESET} skills remove --all                      ${DIM}# remove all skills${RESET}
-  ${DIM}$${RESET} skills remove --skill '*' -a cursor      ${DIM}# remove all skills from cursor${RESET}
+  ${DIM}$${RESET} bzskills remove                           ${DIM}# interactive selection${RESET}
+  ${DIM}$${RESET} bzskills remove my-skill                   ${DIM}# remove specific skill${RESET}
+  ${DIM}$${RESET} bzskills remove skill1 skill2 -y           ${DIM}# remove multiple skills${RESET}
+  ${DIM}$${RESET} bzskills remove --global my-skill          ${DIM}# remove from global scope${RESET}
+  ${DIM}$${RESET} bzskills rm --agent claude-code my-skill   ${DIM}# remove from specific agent${RESET}
+  ${DIM}$${RESET} bzskills remove --all                      ${DIM}# remove all skills${RESET}
+  ${DIM}$${RESET} bzskills remove --skill '*' -a cursor      ${DIM}# remove all skills from cursor${RESET}
 
-Discover more skills at ${TEXT}https://skills.sh/${RESET}
+Discover more skills through your configured Skills Hub.
 `);
 }
 
@@ -272,13 +276,13 @@ Describe when this skill should be used.
   console.log();
   console.log(`${DIM}Publishing:${RESET}`);
   console.log(
-    `  ${DIM}GitHub:${RESET}  Push to a repo, then ${TEXT}npx skills add <owner>/<repo>${RESET}`
+    `  ${DIM}Hub:${RESET}     Publish or cache a repo, then ${TEXT}npx bzskills add <owner>/<repo>${RESET}`
   );
   console.log(
-    `  ${DIM}URL:${RESET}     Host the file, then ${TEXT}npx skills add https://example.com/${displayPath}${RESET}`
+    `  ${DIM}URL:${RESET}     Host the file, then ${TEXT}npx bzskills add https://example.com/${displayPath}${RESET}`
   );
   console.log();
-  console.log(`Browse existing skills for inspiration at ${TEXT}https://skills.sh/${RESET}`);
+  console.log(`Browse existing skills for inspiration through your configured Skills Hub.`);
   console.log();
 }
 
@@ -296,7 +300,7 @@ interface SkillLockEntry {
   sourceUrl: string;
   ref?: string;
   skillPath?: string;
-  /** GitHub tree SHA for the entire skill folder (v3) */
+  /** GitHub tree SHA or Hub file-set digest for the entire skill folder (v3) */
   skillFolderHash: string;
   installedAt: string;
   updatedAt: string;
@@ -344,6 +348,7 @@ interface UpdateCheckOptions {
   global?: boolean;
   project?: boolean;
   yes?: boolean;
+  force?: boolean;
   /** Optional skill name(s) to filter on (positional args) */
   skills?: string[];
 }
@@ -358,6 +363,8 @@ function parseUpdateOptions(args: string[]): UpdateCheckOptions {
       options.project = true;
     } else if (arg === '-y' || arg === '--yes') {
       options.yes = true;
+    } else if (arg === '-f' || arg === '--force') {
+      options.force = true;
     } else if (!arg.startsWith('-')) {
       positional.push(arg);
     }
@@ -484,6 +491,7 @@ function matchesSkillFilter(name: string, filter?: string[]): boolean {
 interface SkippedSkill {
   name: string;
   reason: string;
+  source: string;
   sourceUrl: string;
   sourceType: string;
   ref?: string;
@@ -502,6 +510,9 @@ function getSkipReason(entry: SkillLockEntry): string {
   if (entry.sourceType === 'well-known') {
     return 'Well-known skill';
   }
+  if (entry.sourceType === 'hub') {
+    return entry.skillFolderHash ? 'No Hub package URL recorded' : 'No Hub digest recorded';
+  }
   if (!entry.skillFolderHash) {
     return 'Private or deleted repo';
   }
@@ -509,6 +520,37 @@ function getSkipReason(entry: SkillLockEntry): string {
     return 'No skill path recorded';
   }
   return 'No version tracking';
+}
+
+function getHubPackageUrl(entry: SkillLockEntry): string | null {
+  try {
+    const url = new URL(entry.sourceUrl);
+    const packageMatch = url.pathname.match(/^\/openapi\/v1\/skills\/[^/]+\/[^/]+\/?$/);
+    if (packageMatch) {
+      return `${url.origin}${url.pathname.replace(/\/$/, '')}`;
+    }
+
+    const skillMatch = url.pathname.match(
+      /^(\/openapi\/v1\/skills\/[^/]+\/[^/]+)\/skills\/[^/]+\/?$/
+    );
+    if (skillMatch) {
+      return `${url.origin}${skillMatch[1]}`;
+    }
+  } catch {
+    // Fall through to invalid URL handling below.
+  }
+  return null;
+}
+
+function skippedSkill(name: string, entry: SkillLockEntry, reason: string): SkippedSkill {
+  return {
+    name,
+    reason,
+    source: entry.source,
+    sourceUrl: entry.sourceUrl,
+    sourceType: entry.sourceType,
+    ref: entry.ref,
+  };
 }
 
 /**
@@ -519,6 +561,9 @@ function getSkipReason(entry: SkillLockEntry): string {
  */
 function getInstallSource(skill: SkippedSkill): string {
   let url = skill.sourceUrl;
+  if (skill.sourceType === 'hub') {
+    return skill.source;
+  }
   if (skill.sourceType === 'well-known') {
     // Strip everything from /.well-known/ onwards
     const idx = url.indexOf('/.well-known/');
@@ -559,7 +604,7 @@ function printSkippedSkills(skipped: SkippedSkill[]): void {
       const names = skills.map((s) => sanitizeMetadata(s.name)).join(', ');
       console.log(`  ${TEXT}•${RESET} ${names} ${DIM}(${reason})${RESET}`);
     }
-    console.log(`    ${DIM}To update: ${TEXT}npx skills add ${source} -g -y${RESET}`);
+    console.log(`    ${DIM}To update: ${TEXT}npx bzskills add ${source} -g -y${RESET}`);
   }
 }
 
@@ -590,7 +635,8 @@ async function getProjectSkillsForUpdate(
 // ============================================
 
 async function updateGlobalSkills(
-  skillFilter?: string[]
+  skillFilter?: string[],
+  force?: boolean
 ): Promise<{ successCount: number; failCount: number; checkedCount: number }> {
   const lock = readSkillLock();
   const skillNames = Object.keys(lock.skills);
@@ -600,7 +646,7 @@ async function updateGlobalSkills(
   if (skillNames.length === 0) {
     if (!skillFilter) {
       console.log(`${DIM}No global skills tracked in lock file.${RESET}`);
-      console.log(`${DIM}Install skills with${RESET} ${TEXT}npx skills add <package> -g${RESET}`);
+      console.log(`${DIM}Install skills with${RESET} ${TEXT}npx bzskills add <package> -g${RESET}`);
     }
     return { successCount, failCount, checkedCount: 0 };
   }
@@ -616,14 +662,12 @@ async function updateGlobalSkills(
     const entry = lock.skills[skillName];
     if (!entry) continue;
 
-    if (!entry.skillFolderHash || !entry.skillPath) {
-      skipped.push({
-        name: skillName,
-        reason: getSkipReason(entry),
-        sourceUrl: entry.sourceUrl,
-        sourceType: entry.sourceType,
-        ref: entry.ref,
-      });
+    const isHub = entry.sourceType === 'hub';
+    const isHubCheckable = isHub && !!entry.skillFolderHash;
+    const isGitHubCheckable = !isHub && !!entry.skillFolderHash && !!entry.skillPath;
+
+    if (!isHubCheckable && !isGitHubCheckable) {
+      skipped.push(skippedSkill(skillName, entry, getSkipReason(entry)));
       continue;
     }
 
@@ -637,6 +681,26 @@ async function updateGlobalSkills(
     );
 
     try {
+      if (entry.sourceType === 'hub') {
+        const packageUrl = getHubPackageUrl(entry);
+        if (!packageUrl) {
+          skipped.push(skippedSkill(skillName, entry, 'Invalid Hub package URL'));
+          continue;
+        }
+
+        const skills = await hubProvider.fetchAllSkills(packageUrl, { force });
+        const latestDigest = skills.find((skill) => skill.installName === skillName)?.indexEntry
+          .digest;
+        if (!latestDigest) {
+          skipped.push(skippedSkill(skillName, entry, 'Hub skill unavailable'));
+          continue;
+        }
+        if (latestDigest && latestDigest !== entry.skillFolderHash) {
+          updates.push({ name: skillName, source: entry.source, entry });
+        }
+        continue;
+      }
+
       const latestHash = await fetchSkillFolderHash(
         entry.source,
         entry.skillPath!,
@@ -670,6 +734,10 @@ async function updateGlobalSkills(
   }
 
   if (updates.length === 0) {
+    if (skipped.length > 0) {
+      printSkippedSkills(skipped);
+      return { successCount, failCount, checkedCount };
+    }
     console.log(`${TEXT}✓ All global skills are up to date${RESET}`);
     return { successCount, failCount, checkedCount };
   }
@@ -680,7 +748,7 @@ async function updateGlobalSkills(
   for (const update of updates) {
     const safeName = sanitizeMetadata(update.name);
     console.log(`${TEXT}Updating ${safeName}...${RESET}`);
-    const installUrl = buildUpdateInstallSource(update.entry);
+    const installUrl = buildUpdateInstallSource(update.entry, update.name);
 
     const cliEntry = join(__dirname, '..', 'bin', 'cli.mjs');
     if (!existsSync(cliEntry)) {
@@ -690,10 +758,13 @@ async function updateGlobalSkills(
       );
       continue;
     }
-    const result = spawnSync(process.execPath, [cliEntry, 'add', installUrl, '-g', '-y'], {
+    const addArgs = [cliEntry, 'add', installUrl, '-g', '-y'];
+    if (force && update.entry.sourceType === 'hub') addArgs.push('--force');
+    const result = spawnSync(process.execPath, addArgs, {
       stdio: ['inherit', 'pipe', 'pipe'],
       encoding: 'utf-8',
       shell: process.platform === 'win32',
+      env: { ...process.env, ...hubEnvFromSourceUrl(update.entry.sourceUrl) },
     });
 
     if (result.status === 0) {
@@ -714,7 +785,8 @@ async function updateGlobalSkills(
 // ============================================
 
 async function updateProjectSkills(
-  skillFilter?: string[]
+  skillFilter?: string[],
+  force?: boolean
 ): Promise<{ successCount: number; failCount: number; foundCount: number }> {
   const projectSkills = await getProjectSkillsForUpdate(skillFilter);
   let successCount = 0;
@@ -724,31 +796,19 @@ async function updateProjectSkills(
     if (!skillFilter) {
       console.log(`${DIM}No project skills to update.${RESET}`);
       console.log(
-        `${DIM}Install project skills with${RESET} ${TEXT}npx skills add <package>${RESET}`
+        `${DIM}Install project skills with${RESET} ${TEXT}npx bzskills add <package>${RESET}`
       );
     }
     return { successCount, failCount, foundCount: 0 };
   }
 
-  // Legacy lock entries (written before skillPath was tracked) can't be updated
-  // in place — without skillPath, a reinstall would fetch every skill in the
-  // source repo. Skip them and tell the user how to refresh the lock entry.
-  const updatable = projectSkills.filter((s) => s.entry.skillPath);
-  const legacy = projectSkills.filter((s) => !s.entry.skillPath);
-
-  if (updatable.length === 0) {
-    console.log(`${DIM}No project skills can be updated in place.${RESET}`);
-    printLegacyProjectSkills(legacy);
-    return { successCount, failCount, foundCount: projectSkills.length };
-  }
-
-  console.log(`${TEXT}Refreshing ${updatable.length} project skill(s)...${RESET}`);
+  console.log(`${TEXT}Refreshing ${projectSkills.length} project skill(s)...${RESET}`);
   console.log();
 
-  for (const skill of updatable) {
+  for (const skill of projectSkills) {
     const safeName = sanitizeMetadata(skill.name);
     console.log(`${TEXT}Updating ${safeName}...${RESET}`);
-    const installUrl = buildLocalUpdateSource(skill.entry);
+    const installUrl = buildLocalUpdateSource(skill.entry, skill.name);
 
     const cliEntry = join(__dirname, '..', 'bin', 'cli.mjs');
     if (!existsSync(cliEntry)) {
@@ -760,16 +820,14 @@ async function updateProjectSkills(
     }
 
     // Re-clone without -g to install at project scope
-    // Pass --skill to scope the install to just the requested skill (not the whole source repo)
-    const result = spawnSync(
-      process.execPath,
-      [cliEntry, 'add', installUrl, '--skill', skill.name, '-y'],
-      {
-        stdio: ['inherit', 'pipe', 'pipe'],
-        encoding: 'utf-8',
-        shell: process.platform === 'win32',
-      }
-    );
+    const addArgs = [cliEntry, 'add', installUrl, '-y'];
+    if (force && skill.entry.sourceType === 'hub') addArgs.push('--force');
+    const result = spawnSync(process.execPath, addArgs, {
+      stdio: ['inherit', 'pipe', 'pipe'],
+      encoding: 'utf-8',
+      shell: process.platform === 'win32',
+      env: { ...process.env, ...hubEnvFromSourceUrl(skill.entry.sourceUrl) },
+    });
 
     if (result.status === 0) {
       successCount++;
@@ -780,28 +838,7 @@ async function updateProjectSkills(
     }
   }
 
-  printLegacyProjectSkills(legacy);
   return { successCount, failCount, foundCount: projectSkills.length };
-}
-
-/**
- * Print a hint for each legacy project skill entry that predates skillPath
- * tracking. Lists the manual reinstall command so the user can refresh the
- * lock entry and future updates stay scoped to a single skill.
- */
-function printLegacyProjectSkills(
-  legacy: Array<{ name: string; source: string; entry: LocalSkillLockEntry }>
-): void {
-  if (legacy.length === 0) return;
-  console.log();
-  console.log(
-    `${DIM}${legacy.length} project skill(s) cannot be updated automatically (installed before skillPath tracking):${RESET}`
-  );
-  for (const skill of legacy) {
-    const reinstall = formatSourceInput(skill.entry.source, skill.entry.ref);
-    console.log(`  ${TEXT}•${RESET} ${sanitizeMetadata(skill.name)}`);
-    console.log(`    ${DIM}To refresh: ${TEXT}npx skills add ${reinstall} -y${RESET}`);
-  }
 }
 
 // ============================================
@@ -828,7 +865,10 @@ async function runUpdate(args: string[] = []): Promise<void> {
     if (scope === 'both' && !options.skills) {
       console.log(`${BOLD}Global Skills${RESET}`);
     }
-    const { successCount, failCount, checkedCount } = await updateGlobalSkills(options.skills);
+    const { successCount, failCount, checkedCount } = await updateGlobalSkills(
+      options.skills,
+      options.force
+    );
     totalSuccess += successCount;
     totalFail += failCount;
     totalFound += checkedCount;
@@ -842,7 +882,10 @@ async function runUpdate(args: string[] = []): Promise<void> {
     if (scope === 'both' && !options.skills) {
       console.log(`${BOLD}Project Skills${RESET}`);
     }
-    const { successCount, failCount, foundCount } = await updateProjectSkills(options.skills);
+    const { successCount, failCount, foundCount } = await updateProjectSkills(
+      options.skills,
+      options.force
+    );
     totalSuccess += successCount;
     totalFail += failCount;
     totalFound += foundCount;
@@ -921,7 +964,7 @@ async function main(): Promise<void> {
     }
     case 'remove':
     case 'rm':
-    case 'r':
+    case 'r': {
       // Check for --help or -h flag
       if (restArgs.includes('--help') || restArgs.includes('-h')) {
         showRemoveHelp();
@@ -930,6 +973,7 @@ async function main(): Promise<void> {
       const { skills, options: removeOptions } = parseRemoveOptions(restArgs);
       await removeCommand(skills, removeOptions);
       break;
+    }
     case 'experimental_sync': {
       showLogo();
       const { options: syncOptions } = parseSyncOptions(restArgs);
@@ -956,8 +1000,8 @@ async function main(): Promise<void> {
 
     default:
       console.log(`Unknown command: ${command}`);
-      console.log(`Run ${BOLD}skills --help${RESET} for usage.`);
+      console.log(`Run ${BOLD}bzskills --help${RESET} for usage.`);
   }
 }
 
-main().finally(() => flushTelemetry().then(() => process.exit(0)));
+main();

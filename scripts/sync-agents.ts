@@ -12,11 +12,11 @@ const PACKAGE_PATH = join(ROOT, 'package.json');
 function generateAgentList(): string {
   const agentList = Object.values(agents);
   const count = agentList.length;
-  return `Supports **OpenCode**, **Claude Code**, **Codex**, **Cursor**, and [${count - 4} more](#supported-agents).`;
+  return `Supports **OpenCode**, **Claude Code**, **Codex**, **Cursor**, and [${count - 4} more](#available-agents).`;
 }
 
 function generateAgentNames(): string {
-  return 'Target specific agents (e.g., `claude-code`, `codex`). See [Supported Agents](#supported-agents)';
+  return 'Target specific agents (e.g., `claude-code`, `codex`). See [Available Agents](#available-agents)';
 }
 
 function generateAvailableAgentsTable(): string {
@@ -70,9 +70,9 @@ function generateSkillDiscoveryPaths(): string {
     '- `skills/.system/`',
   ];
 
-  const agentPaths = [...new Set(Object.values(agents).map((a) => a.skillsDir))]
-    .filter((p) => p !== 'skills') // Filter out the standard `skills/` path
-    .map((p) => `- \`${p}/\``);
+  const agentPaths = [...new Set(Object.values(agents).map((a) => a.skillsDir))].map(
+    (p) => `- \`.${p.startsWith('.') ? p.slice(1) : '/' + p}/\``
+  );
 
   return [...standardPaths, ...agentPaths].join('\n');
 }

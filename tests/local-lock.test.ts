@@ -226,6 +226,32 @@ describe('local-lock', () => {
         await rm(dir, { recursive: true, force: true });
       }
     });
+
+    it('stores original /openapi sourceUrl when present', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'lock-test-'));
+      try {
+        await addSkillToLocalLock(
+          'hub-http-skill',
+          {
+            source: 'baizhicloud/foo',
+            sourceUrl: 'https://hub.example.com/openapi/baizhicloud/foo',
+            sourceType: 'well-known',
+            computedHash: 'hash123',
+          },
+          dir
+        );
+
+        const lock = await readLocalLock(dir);
+        expect(lock.skills['hub-http-skill']).toEqual({
+          source: 'baizhicloud/foo',
+          sourceUrl: 'https://hub.example.com/openapi/baizhicloud/foo',
+          sourceType: 'well-known',
+          computedHash: 'hash123',
+        });
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe('removeSkillFromLocalLock', () => {

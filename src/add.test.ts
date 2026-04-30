@@ -4,7 +4,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { runCli } from './test-utils.ts';
 import { shouldInstallInternalSkills } from './skills.ts';
-import { parseAddOptions } from './add.ts';
+import { hubHTTPSourceOptions, parseAddOptions } from './add.ts';
 
 describe('add command', () => {
   let testDir: string;
@@ -18,6 +18,20 @@ describe('add command', () => {
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }
+  });
+
+  it('detects /openapi Hub HTTP sources for install reports', () => {
+    expect(hubHTTPSourceOptions('https://hub.example.com/openapi/baizhicloud/foo')).toEqual({
+      sourceIdentifier: 'baizhicloud/foo',
+      requestHubUrl: 'https://hub.example.com',
+      sourceUrl: 'https://hub.example.com/openapi/baizhicloud/foo',
+    });
+  });
+
+  it('preserves arbitrary well-known URLs without treating them as Hub roots', () => {
+    expect(hubHTTPSourceOptions('https://example.com/docs/team/skills')).toEqual({
+      sourceUrl: 'https://example.com/docs/team/skills',
+    });
   });
 
   it('should show error when no source provided', () => {
@@ -88,6 +102,37 @@ Instructions here.
     expect(result.stdout).toContain('my-skill');
     expect(result.stdout).toContain('Done!');
     expect(result.exitCode).toBe(0);
+  });
+
+  it('deduplicates identical copy-mode install paths in the final summary', () => {
+    const skillDir = join(testDir, 'skills', 'dedupe-copy-skill');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, 'SKILL.md'),
+      `---
+name: dedupe-copy-skill
+description: Test duplicate path display
+---
+
+# Dedupe Copy Skill
+`
+    );
+
+    const targetDir = join(testDir, 'project');
+    mkdirSync(targetDir, { recursive: true });
+
+    const result = runCli(
+      ['add', testDir, '-y', '--copy', '--skill', 'dedupe-copy-skill', '--agent', 'amp', 'codex'],
+      targetDir
+    );
+
+    const duplicatePathLines = result.stdout
+      .split('\n')
+      .filter((line) => line.includes('→ ./.agents/skills/dedupe-copy-skill'));
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('Installed 1 skill');
+    expect(duplicatePathLines).toHaveLength(1);
   });
 
   it('should filter skills by name with --skill flag', () => {
@@ -389,6 +434,18 @@ describe('parseAddOptions', () => {
     expect(result.options.list).toBe(true);
     expect(result.options.global).toBe(true);
   });
+
+  it('should parse --force flag', () => {
+    const result = parseAddOptions(['source', '--force']);
+    expect(result.source).toEqual(['source']);
+    expect(result.options.force).toBe(true);
+  });
+
+  it('should parse -f alias for --force', () => {
+    const result = parseAddOptions(['source', '-f']);
+    expect(result.source).toEqual(['source']);
+    expect(result.options.force).toBe(true);
+  });
 });
 
 describe('openclaw source blocking', () => {
@@ -428,8 +485,13 @@ describe('openclaw source blocking', () => {
   });
 
   it('should not block non-openclaw sources', () => {
-    // Use a local path to avoid network calls that time out on slow CI runners
-    const result = runCli(['add', testDir, '--list'], testDir);
+    const skillDir = join(testDir, 'safe-skill');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, 'SKILL.md'),
+      '---\nname: safe-skill\ndescription: Safe skill\n---\n\n# Safe\n'
+    );
+    const result = runCli(['add', testDir, '--list', '-y'], testDir);
     expect(result.stdout).not.toContain('--dangerously-accept-openclaw-risks');
     expect(result.stdout).not.toContain('Installation blocked');
   });

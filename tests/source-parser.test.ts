@@ -145,65 +145,69 @@ describe('parseSource', () => {
     });
   });
 
-  describe('GitHub shorthand tests', () => {
-    it('GitHub shorthand - owner/repo', () => {
+  describe('Hub shorthand tests', () => {
+    it('Hub shorthand - owner/repo', () => {
       const result = parseSource('owner/repo');
-      expect(result.type).toBe('github');
-      expect(result.url).toBe('https://github.com/owner/repo.git');
+      expect(result.type).toBe('hub');
+      expect(result.url).toBe('https://skillshub.app.baizhi.cloud/openapi/v1/skills/owner/repo');
+      expect(result.owner).toBe('owner');
+      expect(result.repo).toBe('repo');
       expect(result.ref).toBeUndefined();
       expect(result.subpath).toBeUndefined();
     });
 
-    it('GitHub shorthand - owner/repo/path', () => {
+    it('Hub shorthand - owner/repo/path', () => {
       const result = parseSource('owner/repo/skills/my-skill');
-      expect(result.type).toBe('github');
-      expect(result.url).toBe('https://github.com/owner/repo.git');
+      expect(result.type).toBe('hub');
+      expect(result.url).toBe('https://skillshub.app.baizhi.cloud/openapi/v1/skills/owner/repo');
       expect(result.subpath).toBe('skills/my-skill');
     });
 
-    it('GitHub shorthand - owner/repo/ trailing slash', () => {
+    it('Hub shorthand - owner/repo/ trailing slash', () => {
       const result = parseSource('owner/repo/');
-      expect(result.type).toBe('github');
-      expect(result.url).toBe('https://github.com/owner/repo.git');
+      expect(result.type).toBe('hub');
+      expect(result.url).toBe('https://skillshub.app.baizhi.cloud/openapi/v1/skills/owner/repo');
       expect(result.subpath).toBeUndefined();
     });
 
-    it('GitHub shorthand - owner/repo@skill (skill filter syntax)', () => {
+    it('Hub shorthand - owner/repo@skill (skill filter syntax)', () => {
       const result = parseSource('owner/repo@my-skill');
-      expect(result.type).toBe('github');
-      expect(result.url).toBe('https://github.com/owner/repo.git');
+      expect(result.type).toBe('hub');
+      expect(result.url).toBe('https://skillshub.app.baizhi.cloud/openapi/v1/skills/owner/repo');
       expect(result.skillFilter).toBe('my-skill');
       expect(result.subpath).toBeUndefined();
     });
 
-    it('GitHub shorthand - owner/repo@skill with hyphenated skill name', () => {
+    it('Hub shorthand - owner/repo@skill with hyphenated skill name', () => {
       const result = parseSource('vercel-labs/agent-skills@find-skills');
-      expect(result.type).toBe('github');
-      expect(result.url).toBe('https://github.com/vercel-labs/agent-skills.git');
+      expect(result.type).toBe('hub');
+      expect(result.url).toBe(
+        'https://skillshub.app.baizhi.cloud/openapi/v1/skills/vercel-labs/agent-skills'
+      );
       expect(result.skillFilter).toBe('find-skills');
     });
 
-    it('GitHub shorthand - owner/repo#branch', () => {
+    it('Hub shorthand - owner/repo#branch ignores branch refs', () => {
       const result = parseSource('owner/repo#my-branch');
-      expect(result.type).toBe('github');
-      expect(result.url).toBe('https://github.com/owner/repo.git');
-      expect(result.ref).toBe('my-branch');
+      expect(result.type).toBe('hub');
+      expect(result.url).toBe('https://skillshub.app.baizhi.cloud/openapi/v1/skills/owner/repo');
+      expect(result.ref).toBeUndefined();
       expect(result.subpath).toBeUndefined();
     });
 
-    it('GitHub shorthand - owner/repo/path#branch', () => {
+    it('Hub shorthand - owner/repo/path#branch ignores branch refs', () => {
       const result = parseSource('owner/repo/skills/my-skill#feature/skills');
-      expect(result.type).toBe('github');
-      expect(result.url).toBe('https://github.com/owner/repo.git');
-      expect(result.ref).toBe('feature/skills');
+      expect(result.type).toBe('hub');
+      expect(result.url).toBe('https://skillshub.app.baizhi.cloud/openapi/v1/skills/owner/repo');
+      expect(result.ref).toBeUndefined();
       expect(result.subpath).toBe('skills/my-skill');
     });
 
-    it('GitHub shorthand - owner/repo#branch@skill', () => {
+    it('Hub shorthand - owner/repo#branch@skill ignores branch and keeps skill filter', () => {
       const result = parseSource('owner/repo#my-branch@my-skill');
-      expect(result.type).toBe('github');
-      expect(result.url).toBe('https://github.com/owner/repo.git');
-      expect(result.ref).toBe('my-branch');
+      expect(result.type).toBe('hub');
+      expect(result.url).toBe('https://skillshub.app.baizhi.cloud/openapi/v1/skills/owner/repo');
+      expect(result.ref).toBeUndefined();
       expect(result.skillFilter).toBe('my-skill');
     });
   });
@@ -411,8 +415,10 @@ describe('getOwnerRepo', () => {
 describe('Source aliases', () => {
   it('resolves coinbase/agentWallet to coinbase/agentic-wallet-skills', () => {
     const result = parseSource('coinbase/agentWallet');
-    expect(result.type).toBe('github');
-    expect(result.url).toBe('https://github.com/coinbase/agentic-wallet-skills.git');
+    expect(result.type).toBe('hub');
+    expect(result.url).toBe(
+      'https://skillshub.app.baizhi.cloud/openapi/v1/skills/coinbase/agentic-wallet-skills'
+    );
   });
 });
 
