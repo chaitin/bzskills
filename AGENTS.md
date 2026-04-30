@@ -1,24 +1,24 @@
 # AGENTS.md
 
-This file provides guidance to AI coding agents working on the `skills` CLI codebase.
+This file provides guidance to AI coding agents working on the `bzskills` CLI codebase.
 
 ## Project Overview
 
-`skills` is the CLI for the open agent skills ecosystem.
+`bzskills` is the CLI for the open agent skills ecosystem.
 
 ## Commands
 
 | Command                       | Description                                         |
 | ----------------------------- | --------------------------------------------------- |
-| `skills`                      | Show banner with available commands                 |
-| `skills add <pkg>`            | Install skills from git repos, URLs, or local paths |
-| `skills experimental_install` | Restore skills from skills-lock.json                |
-| `skills experimental_sync`    | Sync skills from node_modules into agent dirs       |
-| `skills list`                 | List installed skills (alias: `ls`)                 |
-| `skills update [skills...]`   | Update skills to latest versions                    |
-| `skills init [name]`          | Create a new SKILL.md template                      |
+| `bzskills`                      | Show banner with available commands                 |
+| `bzskills add <pkg>`            | Install skills from git repos, URLs, or local paths |
+| `bzskills experimental_install` | Restore skills from skills-lock.json                |
+| `bzskills experimental_sync`    | Sync skills from node_modules into agent dirs       |
+| `bzskills list`                 | List installed skills (alias: `ls`)                 |
+| `bzskills update [skills...]`   | Update skills to latest versions                    |
+| `bzskills init [name]`          | Create a new SKILL.md template                      |
 
-Aliases: `skills a` works for `add`. `skills i`, `skills install` (no args) restore from `skills-lock.json`. `skills ls` works for `list`. `skills experimental_install` restores from `skills-lock.json`. `skills experimental_sync` crawls `node_modules` for skills.
+Aliases: `bzskills a` works for `add`. `bzskills i`, `bzskills install` (no args) restore from `skills-lock.json`. `bzskills ls` works for `list`. `bzskills experimental_install` restores from `skills-lock.json`. `bzskills experimental_sync` crawls `node_modules` for skills. The legacy `skills` bin remains available for compatibility, but new examples should use `bzskills`.
 
 ## Architecture
 
@@ -77,14 +77,14 @@ tests/
 
 ## Update Checking System
 
-### How `skills check` and `skills update` Work
+### How `bzskills check` and `bzskills update` Work
 
 1. Read `~/.agents/.skill-lock.json` for installed skills
 2. Filter to GitHub-backed skills that have both `skillFolderHash` and `skillPath`
 3. For each skill, call `fetchSkillFolderHash(source, skillPath, token)`. Optional auth token is sourced from `GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token` to improve rate limits.
 4. `fetchSkillFolderHash` calls GitHub Trees API directly (`/git/trees/<branch>?recursive=1` for `main`, then `master` fallback)
 5. Compare latest folder tree SHA with lock file `skillFolderHash`; mismatch means update available
-6. `skills update` reinstalls changed skills by invoking the current CLI entrypoint directly (`node <repo>/bin/cli.mjs add <source-tree-url> -g -y`) to avoid nested npm exec/npx behavior
+6. `bzskills update` reinstalls changed skills by invoking the current CLI entrypoint directly (`node <repo>/bin/cli.mjs add <source-tree-url> -g -y`) to avoid nested npm exec/npx behavior
 
 ### Lock File Compatibility
 
@@ -96,10 +96,10 @@ If reading an older lock file version, it's wiped. Users must reinstall skills t
 
 | Feature                    | Implementation                                                |
 | -------------------------- | ------------------------------------------------------------- |
-| `skills add`               | `src/add.ts` - full implementation                            |
-| `skills experimental_sync` | `src/sync.ts` - crawl node_modules                            |
-| `skills check`             | `src/cli.ts` + `fetchSkillFolderHash` in `src/skill-lock.ts`  |
-| `skills update`            | `src/cli.ts` direct hash compare + reinstall via `skills add` |
+| `bzskills add`               | `src/add.ts` - full implementation                              |
+| `bzskills experimental_sync` | `src/sync.ts` - crawl node_modules                              |
+| `bzskills check`             | `src/cli.ts` + `fetchSkillFolderHash` in `src/skill-lock.ts`    |
+| `bzskills update`            | `src/cli.ts` direct hash compare + reinstall via `bzskills add` |
 
 ## Development
 
