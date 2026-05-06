@@ -58,8 +58,6 @@ import {
   addSkillToLock,
   fetchSkillFolderHash,
   getGitHubToken,
-  isPromptDismissed,
-  dismissPrompt,
   getLastSelectedAgents,
   saveSelectedAgents,
 } from './skill-lock.ts';
@@ -980,9 +978,6 @@ async function handleWellKnownSkills(
   p.outro(
     pc.green('Done!') + pc.dim('  Review skills before use; they run with full agent permissions.')
   );
-
-  // Prompt for find-skills after successful install
-  await promptForFindSkills(options, targetAgents);
 }
 
 export async function runAdd(args: string[], options: AddOptions = {}): Promise<void> {
@@ -1009,7 +1004,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     );
     console.log();
     console.log(pc.dim('  Example:'));
-    console.log(`    ${pc.cyan('npx bzskills add')} ${pc.yellow('baizhicloud/foo')}`);
+    console.log(`    ${pc.cyan('npx bzskills add')} ${pc.yellow('vercel-labs/agent-skills')}`);
     console.log();
     process.exit(1);
   }
@@ -1872,9 +1867,6 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       pc.green('Done!') +
         pc.dim('  Review skills before use; they run with full agent permissions.')
     );
-
-    // Prompt for find-skills after successful install
-    await promptForFindSkills(options, targetAgents);
   } catch (error) {
     if (error instanceof GitCloneError) {
       p.log.error(pc.red('Failed to clone repository'));
@@ -1901,81 +1893,6 @@ async function cleanup(tempDir: string | null) {
     } catch {
       // Ignore cleanup errors
     }
-  }
-}
-
-/**
- * Prompt user to install the find-skills skill after their first installation.
- */
-async function promptForFindSkills(
-  options?: AddOptions,
-  targetAgents?: AgentType[]
-): Promise<void> {
-  // Skip if already dismissed or not in interactive mode
-  if (!process.stdin.isTTY) return;
-  if (options?.yes) return;
-
-  try {
-    const dismissed = await isPromptDismissed('findSkillsPrompt');
-    if (dismissed) return;
-
-    // Check if find-skills is already installed
-    const findSkillsInstalled = await isSkillInstalled('find-skills', 'claude-code', {
-      global: true,
-    });
-    if (findSkillsInstalled) {
-      // Mark as dismissed so we don't check again
-      await dismissPrompt('findSkillsPrompt');
-      return;
-    }
-
-    console.log();
-    p.log.message(pc.dim("One-time prompt - you won't be asked again if you dismiss."));
-    const install = await p.confirm({
-      message: `Install the ${pc.cyan('find-skills')} skill? It helps your agent discover and suggest skills.`,
-    });
-
-    if (p.isCancel(install)) {
-      await dismissPrompt('findSkillsPrompt');
-      return;
-    }
-
-    if (install) {
-      // Install find-skills to the same agents the user selected, excluding replit
-      await dismissPrompt('findSkillsPrompt');
-
-      // Filter out replit from target agents
-      const findSkillsAgents = targetAgents?.filter((a) => a !== 'replit');
-
-      // Skip if no valid agents remain after filtering
-      if (!findSkillsAgents || findSkillsAgents.length === 0) {
-        return;
-      }
-
-      console.log();
-      p.log.step('Installing find-skills skill...');
-
-      try {
-        // Call runAdd directly
-        await runAdd(['vercel-labs/skills'], {
-          skill: ['find-skills'],
-          global: true,
-          yes: true,
-          agent: findSkillsAgents,
-        });
-      } catch {
-        p.log.warn('Failed to install find-skills. You can try again with:');
-        p.log.message(pc.dim('  npx bzskills add vercel-labs/skills@find-skills -g -y --all'));
-      }
-    } else {
-      // User declined - dismiss the prompt
-      await dismissPrompt('findSkillsPrompt');
-      p.log.message(
-        pc.dim('You can install it later with: npx bzskills add vercel-labs/skills@find-skills')
-      );
-    }
-  } catch {
-    // Don't fail the main installation if prompt fails
   }
 }
 

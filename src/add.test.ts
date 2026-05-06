@@ -508,7 +508,7 @@ describe('openclaw source blocking', () => {
   });
 });
 
-describe('find-skills prompt with -y flag', () => {
+describe('add command prompt behavior', () => {
   let testDir: string;
 
   beforeEach(() => {
@@ -522,7 +522,7 @@ describe('find-skills prompt with -y flag', () => {
     }
   });
 
-  it('should skip find-skills prompt when -y flag is passed', () => {
+  it('completes a non-interactive add with the yes flag', () => {
     // Create a test skill
     const skillDir = join(testDir, 'test-skill');
     mkdirSync(skillDir, { recursive: true });
@@ -542,10 +542,6 @@ This is a test skill for -y flag mode testing.
     // Run with -y flag - should complete without hanging
     const result = runCli(['add', testDir, '-g', '-y', '--skill', 'yes-flag-test-skill'], testDir);
 
-    // Should not contain the find-skills prompt
-    expect(result.stdout).not.toContain('Install the find-skills skill');
-    expect(result.stdout).not.toContain("One-time prompt - you won't be asked again");
-    // Should complete successfully
     expect(result.exitCode).toBe(0);
   });
 });
