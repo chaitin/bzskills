@@ -85,11 +85,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/baizhicloud/skills-hub.git"
+    "url": "git+https://github.com/chaitin/bzskills.git"
   },
-  "homepage": "https://github.com/baizhicloud/skills-hub#readme",
+  "homepage": "https://github.com/chaitin/bzskills#readme",
   "bugs": {
-    "url": "https://github.com/baizhicloud/skills-hub/issues"
+    "url": "https://github.com/chaitin/bzskills/issues"
   },
   "author": "",
   "license": "MIT",
