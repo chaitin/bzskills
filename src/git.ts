@@ -3,7 +3,19 @@ import { join, normalize, resolve, sep } from 'path';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 
-const CLONE_TIMEOUT_MS = 60000; // 60 seconds
+const DEFAULT_CLONE_TIMEOUT_MS = 5 * 60 * 1000;
+
+function cloneTimeoutMs(): number {
+  const raw = process.env.BZSKILLS_CLONE_TIMEOUT_MS;
+  if (!raw) return DEFAULT_CLONE_TIMEOUT_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CLONE_TIMEOUT_MS;
+}
+
+function formatTimeout(ms: number): string {
+  const seconds = Math.round(ms / 1000);
+  return seconds % 60 === 0 ? `${seconds / 60}m` : `${seconds}s`;
+}
 
 export class GitCloneError extends Error {
   readonly url: string;
@@ -21,12 +33,13 @@ export class GitCloneError extends Error {
 
 export async function cloneRepo(url: string, ref?: string): Promise<string> {
   const tempDir = await mkdtemp(join(tmpdir(), 'skills-'));
+  const timeoutMs = cloneTimeoutMs();
   const previousGitPrompt = process.env.GIT_TERMINAL_PROMPT;
   const previousGitLfsSkipSmudge = process.env.GIT_LFS_SKIP_SMUDGE;
   process.env.GIT_TERMINAL_PROMPT = '0';
   process.env.GIT_LFS_SKIP_SMUDGE = '1';
   const git = simpleGit({
-    timeout: { block: CLONE_TIMEOUT_MS },
+    timeout: { block: timeoutMs },
   });
   const cloneOptions = ref ? ['--depth', '1', '--branch', ref] : ['--depth', '1'];
 
@@ -47,7 +60,8 @@ export async function cloneRepo(url: string, ref?: string): Promise<string> {
 
     if (isTimeout) {
       throw new GitCloneError(
-        `Clone timed out after 60s. This often happens with private repos that require authentication.\n` +
+        `Clone timed out after ${formatTimeout(timeoutMs)}. This often happens with very large repos or private repos that require authentication.\n` +
+          `  For very large repos, retry with BZSKILLS_CLONE_TIMEOUT_MS set to a larger value.\n` +
           `  Ensure you have access and your SSH keys or credentials are configured:\n` +
           `  - For SSH: ssh-add -l (to check loaded keys)\n` +
           `  - For HTTPS: gh auth status (if using GitHub CLI)`,
