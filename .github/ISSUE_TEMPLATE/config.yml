@@ -1,7 +1,7 @@
 blank_issues_enabled: true
 contact_links:
   - name: Documentation
-    url: https://github.com/baizhicloud/skills-hub/tree/main/bzskills#readme
+    url: https://github.com/chaitin/bzskills#readme
     about: Check the README for usage instructions
   - name: Agent Skills Specification
     url: https://agentskills.io/home
