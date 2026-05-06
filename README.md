@@ -91,8 +91,6 @@ npx bzskills add baizhicloud/foo --skill '*' -a claude-code
 npx bzskills add baizhicloud/foo --agent '*' --skill frontend-design
 ```
 
-`bzskills` also keeps the legacy `skills` and `add-skill` bin aliases for compatibility, but new docs and examples use `bzskills`.
-
 ### Installation Scope
 
 | Scope       | Flag      | Location            | Use Case                                      |

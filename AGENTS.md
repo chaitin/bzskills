@@ -18,7 +18,7 @@ This file provides guidance to AI coding agents working on the `bzskills` CLI co
 | `bzskills update [skills...]`   | Update skills to latest versions                    |
 | `bzskills init [name]`          | Create a new SKILL.md template                      |
 
-Aliases: `bzskills a` works for `add`. `bzskills i`, `bzskills install` (no args) restore from `skills-lock.json`. `bzskills ls` works for `list`. `bzskills experimental_install` restores from `skills-lock.json`. `bzskills experimental_sync` crawls `node_modules` for skills. The legacy `skills` bin remains available for compatibility, but new examples should use `bzskills`.
+Aliases: `bzskills a` works for `add`. `bzskills i`, `bzskills install` (no args) restore from `skills-lock.json`. `bzskills ls` works for `list`. `bzskills experimental_install` restores from `skills-lock.json`. `bzskills experimental_sync` crawls `node_modules` for skills.
 
 ## Architecture
 

@@ -4,9 +4,7 @@
   "description": "Skills Hub CLI for installing agent skills",
   "type": "module",
   "bin": {
-    "bzskills": "./bin/cli.mjs",
-    "skills": "./bin/cli.mjs",
-    "add-skill": "./bin/cli.mjs"
+    "bzskills": "bin/cli.mjs"
   },
   "files": [
     "dist",
