@@ -243,6 +243,221 @@ describe('HubProvider', () => {
     );
   });
 
+  it('filters skills by exact Hub skill name before fetching details', async () => {
+    const requestedUrls: string[] = [];
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo') {
+        return jsonResponse({
+          owner: 'alice',
+          repo: 'repo',
+          skills: [
+            { name: 'wanted', description: 'Wanted', entryPath: 'skills/wanted' },
+            { name: 'other', description: 'Other', entryPath: 'skills/other' },
+          ],
+        });
+      }
+      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo/skills/wanted') {
+        return jsonResponse({
+          name: 'wanted',
+          description: 'Wanted',
+          entryPath: 'skills/wanted',
+          files: [
+            {
+              path: 'SKILL.md',
+              contents: '---\nname: wanted\ndescription: Wanted\n---\n\n# Wanted\n',
+            },
+          ],
+        });
+      }
+      return textResponse('missing', 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const skills = await provider.fetchAllSkills(
+      'https://hub.example.com/openapi/v1/skills/alice/repo',
+      {
+        skillNames: ['wanted'],
+      }
+    );
+
+    expect(skills.map((skill) => skill.installName)).toEqual(['wanted']);
+    expect(requestedUrls).toEqual([
+      'https://hub.example.com/openapi/v1/skills/alice/repo',
+      'https://hub.example.com/openapi/v1/skills/alice/repo/skills/wanted',
+    ]);
+  });
+
+  it('limits concurrent Hub skill metadata requests', async () => {
+    let activeSkillRequests = 0;
+    let maxActiveSkillRequests = 0;
+    let releaseSkillRequests: (() => void) | undefined;
+    const skillRequestsStarted: string[] = [];
+    const skillRequestGate = new Promise<void>((resolve) => {
+      releaseSkillRequests = resolve;
+    });
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo') {
+        return jsonResponse({
+          owner: 'alice',
+          repo: 'repo',
+          skills: [
+            { name: 'one', description: 'One' },
+            { name: 'two', description: 'Two' },
+            { name: 'three', description: 'Three' },
+          ],
+        });
+      }
+      const skillMatch = url.match(/\/skills\/([^/]+)$/);
+      if (skillMatch) {
+        activeSkillRequests += 1;
+        maxActiveSkillRequests = Math.max(maxActiveSkillRequests, activeSkillRequests);
+        skillRequestsStarted.push(skillMatch[1]!);
+        if (skillRequestsStarted.length === 2) {
+          releaseSkillRequests?.();
+        }
+        await skillRequestGate;
+        activeSkillRequests -= 1;
+        const skillName = skillMatch[1]!;
+        return jsonResponse({
+          name: skillName,
+          description: skillName,
+          files: [
+            {
+              path: 'SKILL.md',
+              contents: `---\nname: ${skillName}\ndescription: ${skillName}\n---\n\n# ${skillName}\n`,
+            },
+          ],
+        });
+      }
+      return textResponse('missing', 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const skills = await provider.fetchAllSkills(
+      'https://hub.example.com/openapi/v1/skills/alice/repo',
+      {
+        concurrency: 2,
+      }
+    );
+
+    expect(skills.map((skill) => skill.installName)).toEqual(['one', 'two', 'three']);
+    expect(maxActiveSkillRequests).toBe(2);
+  });
+
+  it('rate limits Hub skill metadata and file requests', async () => {
+    const waitOrder: string[] = [];
+    const requestedUrls: string[] = [];
+    const rateLimiter = {
+      async wait() {
+        waitOrder.push('wait');
+      },
+    };
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo') {
+        return jsonResponse({
+          owner: 'alice',
+          repo: 'repo',
+          skills: [{ name: 'remote-skill', description: 'Remote skill' }],
+        });
+      }
+      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo/skills/remote-skill') {
+        return jsonResponse({
+          name: 'remote-skill',
+          description: 'Remote skill',
+          files: [
+            {
+              path: 'SKILL.md',
+              url: 'https://hub.example.com/openapi/v1/skills/alice/repo/files/skills/remote-skill/SKILL.md',
+            },
+          ],
+        });
+      }
+      if (url.endsWith('/SKILL.md')) {
+        return textResponse(
+          '---\nname: remote-skill\ndescription: Remote skill\n---\n\n# Remote\n'
+        );
+      }
+      return textResponse('missing', 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const skills = await provider.fetchAllSkills(
+      'https://hub.example.com/openapi/v1/skills/alice/repo',
+      { rateLimiter }
+    );
+
+    expect(skills.map((skill) => skill.installName)).toEqual(['remote-skill']);
+    expect(waitOrder).toEqual(['wait', 'wait']);
+    expect(requestedUrls).toEqual([
+      'https://hub.example.com/openapi/v1/skills/alice/repo',
+      'https://hub.example.com/openapi/v1/skills/alice/repo/skills/remote-skill',
+      'https://hub.example.com/openapi/v1/skills/alice/repo/files/skills/remote-skill/SKILL.md',
+    ]);
+  });
+
+  it('reports Hub fetch diagnostics for filtered and failed skills', async () => {
+    const diagnostics: unknown[] = [];
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo') {
+        return jsonResponse({
+          owner: 'alice',
+          repo: 'repo',
+          skills: [
+            { name: 'good', description: 'Good' },
+            { name: 'bad', description: 'Bad' },
+            { name: 'filtered', description: 'Filtered' },
+          ],
+        });
+      }
+      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo/skills/good') {
+        return jsonResponse({
+          name: 'good',
+          description: 'Good',
+          files: [
+            {
+              path: 'SKILL.md',
+              contents: '---\nname: good\ndescription: Good\n---\n\n# Good\n',
+            },
+          ],
+        });
+      }
+      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo/skills/bad') {
+        return jsonResponse({
+          name: 'bad',
+          description: 'Bad',
+          files: [{ path: 'SKILL.md', contents: '# Missing frontmatter\n' }],
+        });
+      }
+      return textResponse('missing', 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const skills = await provider.fetchAllSkills(
+      'https://hub.example.com/openapi/v1/skills/alice/repo',
+      {
+        skillNames: ['good', 'bad'],
+        onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+      }
+    );
+
+    expect(skills.map((skill) => skill.installName)).toEqual(['good']);
+    expect(diagnostics).toEqual([
+      {
+        packageSkillCount: 3,
+        matchedSkillCount: 2,
+        fetchedSkillCount: 1,
+        failedSkillCount: 1,
+        failureReasons: { invalid_frontmatter: 1 },
+      },
+    ]);
+  });
+
   it.each(['../secret', 'C:/secret', 'dir\\file', './file', 'dir//file'])(
     'rejects unsafe file path %s from Hub metadata',
     async (path) => {
