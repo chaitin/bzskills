@@ -248,7 +248,7 @@ describe('HubProvider', () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       requestedUrls.push(url);
-      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo') {
+      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo?skill=wanted') {
         return jsonResponse({
           owner: 'alice',
           repo: 'repo',
@@ -284,8 +284,102 @@ describe('HubProvider', () => {
 
     expect(skills.map((skill) => skill.installName)).toEqual(['wanted']);
     expect(requestedUrls).toEqual([
-      'https://hub.example.com/openapi/v1/skills/alice/repo',
+      'https://hub.example.com/openapi/v1/skills/alice/repo?skill=wanted',
       'https://hub.example.com/openapi/v1/skills/alice/repo/skills/wanted',
+    ]);
+  });
+
+  it('passes force and multiple skill filters to native Hub package metadata requests', async () => {
+    const requestedUrls: string[] = [];
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (
+        url ===
+        'https://hub.example.com/openapi/v1/skills/alice/repo?force=true&skill=one&skill=two'
+      ) {
+        return jsonResponse({
+          owner: 'alice',
+          repo: 'repo',
+          skills: [
+            { name: 'one', description: 'One' },
+            { name: 'two', description: 'Two' },
+          ],
+        });
+      }
+      const skillMatch = url.match(/\/skills\/(one|two)\?force=true$/);
+      if (skillMatch) {
+        const skillName = skillMatch[1]!;
+        return jsonResponse({
+          name: skillName,
+          description: skillName,
+          files: [
+            {
+              path: 'SKILL.md',
+              contents: `---\nname: ${skillName}\ndescription: ${skillName}\n---\n\n# ${skillName}\n`,
+            },
+          ],
+        });
+      }
+      return textResponse('missing', 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const skills = await provider.fetchAllSkills(
+      'https://hub.example.com/openapi/v1/skills/alice/repo',
+      {
+        force: true,
+        skillNames: ['one', 'two'],
+      }
+    );
+
+    expect(skills.map((skill) => skill.installName).sort()).toEqual(['one', 'two']);
+    expect(requestedUrls).toEqual([
+      'https://hub.example.com/openapi/v1/skills/alice/repo?force=true&skill=one&skill=two',
+      'https://hub.example.com/openapi/v1/skills/alice/repo/skills/one?force=true',
+      'https://hub.example.com/openapi/v1/skills/alice/repo/skills/two?force=true',
+    ]);
+  });
+
+  it('does not pass skill filters when wildcard is requested', async () => {
+    const requestedUrls: string[] = [];
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo') {
+        return jsonResponse({
+          owner: 'alice',
+          repo: 'repo',
+          skills: [{ name: 'one', description: 'One' }],
+        });
+      }
+      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo/skills/one') {
+        return jsonResponse({
+          name: 'one',
+          description: 'One',
+          files: [
+            {
+              path: 'SKILL.md',
+              contents: '---\nname: one\ndescription: One\n---\n\n# One\n',
+            },
+          ],
+        });
+      }
+      return textResponse('missing', 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const skills = await provider.fetchAllSkills(
+      'https://hub.example.com/openapi/v1/skills/alice/repo',
+      {
+        skillNames: ['*', 'one'],
+      }
+    );
+
+    expect(skills.map((skill) => skill.installName)).toEqual(['one']);
+    expect(requestedUrls).toEqual([
+      'https://hub.example.com/openapi/v1/skills/alice/repo',
+      'https://hub.example.com/openapi/v1/skills/alice/repo/skills/one',
     ]);
   });
 
@@ -404,7 +498,7 @@ describe('HubProvider', () => {
     const diagnostics: unknown[] = [];
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
-      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo') {
+      if (url === 'https://hub.example.com/openapi/v1/skills/alice/repo?skill=good&skill=bad') {
         return jsonResponse({
           owner: 'alice',
           repo: 'repo',

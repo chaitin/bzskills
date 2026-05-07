@@ -55,14 +55,22 @@ const SECOND_MS = 1000;
 
 class FixedWindowRateLimiter implements HubRateLimiter {
   private readonly timestamps: number[] = [];
+  private readonly maxRequests: number;
+  private readonly windowMs: number;
+  private readonly now: () => number;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(
-    private readonly maxRequests: number,
-    private readonly windowMs: number,
-    private readonly now: () => number = Date.now,
-    private readonly sleep: (ms: number) => Promise<void> = (ms) =>
-      new Promise((resolve) => setTimeout(resolve, ms))
-  ) {}
+    maxRequests: number,
+    windowMs: number,
+    now: () => number = Date.now,
+    sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  ) {
+    this.maxRequests = maxRequests;
+    this.windowMs = windowMs;
+    this.now = now;
+    this.sleep = sleep;
+  }
 
   async wait(): Promise<void> {
     while (true) {
@@ -85,10 +93,20 @@ function createDefaultHubRateLimiter(): HubRateLimiter {
   return new FixedWindowRateLimiter(DEFAULT_HUB_REQUESTS_PER_SECOND, SECOND_MS);
 }
 
-function withHubQuery(url: string, options: HubFetchOptions = {}): string {
-  if (!options.force) return url;
+function withHubQuery(
+  url: string,
+  options: HubFetchOptions = {},
+  queryOptions: { includeSkillNames?: boolean } = {}
+): string {
+  const names = queryOptions.includeSkillNames ? normalizedSkillNames(options.skillNames) : null;
+  if (!options.force && !names) return url;
   const parsed = new URL(url);
   if (options.force) parsed.searchParams.set('force', 'true');
+  if (names) {
+    for (const name of names) {
+      parsed.searchParams.append('skill', name);
+    }
+  }
   return parsed.toString();
 }
 
@@ -116,8 +134,10 @@ function isSafeFilePath(path: string): boolean {
 }
 
 function normalizedSkillNames(skillNames: string[] | undefined): Set<string> | null {
+  if (!skillNames || skillNames.some((name) => name.trim() === '*')) {
+    return null;
+  }
   const names = skillNames
-    ?.filter((name) => name !== '*')
     .map((name) => name.trim().toLowerCase())
     .filter((name) => name.length > 0);
   return names && names.length > 0 ? new Set(names) : null;
@@ -212,7 +232,7 @@ export class HubProvider implements HostProvider {
 
   async fetchAllSkills(url: string, options: HubFetchOptions = {}): Promise<WellKnownSkill[]> {
     try {
-      const packageResponse = await fetch(withHubQuery(url, options));
+      const packageResponse = await fetch(withHubQuery(url, options, { includeSkillNames: true }));
       if (!packageResponse.ok) return [];
       const upstreamCommitSha = packageResponse.headers.get('X-Skills-Commit-SHA') || undefined;
       const metadata = (await packageResponse.json()) as HubPackageMetadata;

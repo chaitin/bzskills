@@ -227,6 +227,64 @@ describe('skills CLI', () => {
       }
     }, 60000);
 
+    it('passes --skill filters to native Hub package metadata requests', async () => {
+      const projectDir = mkdtempSync(join(tmpdir(), 'bzskills-project-'));
+      const requested: string[] = [];
+      const skillContent = '---\nname: my-skill\ndescription: My skill\n---\n\n# My Skill\n';
+
+      try {
+        await withCustomHubServer(
+          (req, res) => {
+            requested.push(req.url || '');
+            res.setHeader('content-type', 'application/json');
+            if (req.url === '/openapi/v1/skills/owner/repo?skill=my-skill') {
+              res.end(
+                JSON.stringify({
+                  owner: 'owner',
+                  repo: 'repo',
+                  skills: [
+                    { name: 'my-skill', description: 'My skill', entryPath: 'skills/my-skill' },
+                  ],
+                })
+              );
+              return;
+            }
+            if (req.url === '/openapi/v1/skills/owner/repo/skills/my-skill') {
+              res.end(
+                JSON.stringify({
+                  name: 'my-skill',
+                  description: 'My skill',
+                  entryPath: 'skills/my-skill',
+                  files: [{ path: 'SKILL.md', digest: 'sha256:skill', contents: skillContent }],
+                })
+              );
+              return;
+            }
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: 'not found' }));
+          },
+          async (baseUrl) => {
+            const result = await runCliAsync(
+              ['add', 'owner/repo', '--skill', 'my-skill', '-y', '--agent', 'claude-code'],
+              {
+                SKILLS_HUB_URL: baseUrl,
+                XDG_STATE_HOME: join(projectDir, '.state'),
+              },
+              projectDir
+            );
+
+            expect(result.exitCode).toBe(0);
+            expect(requested).toEqual([
+              '/openapi/v1/skills/owner/repo?skill=my-skill',
+              '/openapi/v1/skills/owner/repo/skills/my-skill',
+            ]);
+          }
+        );
+      } finally {
+        rmSync(projectDir, { recursive: true, force: true });
+      }
+    }, 60000);
+
     it('checks Hub global skills by digest instead of skipping them', async () => {
       const fileDigest = 'sha256:skill';
       const hubDigest = sha256(`SKILL.md\0${fileDigest}`);
