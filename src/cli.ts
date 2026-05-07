@@ -142,6 +142,7 @@ ${BOLD}Add Options:${RESET}
   -l, --list             List available skills in the repository without installing
   -y, --yes              Skip confirmation prompts
   -f, --force            Force refresh through Skills Hub when supported
+  --debug                Print detailed skill discovery diagnostics on failure
   --copy                 Copy files instead of symlinking to agent directories
   --all                  Shorthand for --skill '*' --agent '*' -y
   --full-depth           Search all subdirectories even when a root SKILL.md exists

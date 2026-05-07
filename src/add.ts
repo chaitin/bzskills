@@ -29,7 +29,12 @@ async function isSourcePrivate(source: string): Promise<boolean | null> {
   return isRepoPrivate(ownerRepo.owner, ownerRepo.repo);
 }
 import { cloneRepo, cleanupTempDir, GitCloneError } from './git.ts';
-import { discoverSkills, getSkillDisplayName, filterSkills } from './skills.ts';
+import {
+  discoverSkills,
+  getSkillDisplayName,
+  filterSkills,
+  diagnoseSkillDiscovery,
+} from './skills.ts';
 import {
   installSkillForAgent,
   installBlobSkillForAgent,
@@ -436,7 +441,53 @@ export interface AddOptions {
   fullDepth?: boolean;
   copy?: boolean;
   force?: boolean;
+  debug?: boolean;
   dangerouslyAcceptOpenclawRisks?: boolean;
+}
+
+function logDebug(message: string): void {
+  p.log.message(pc.dim(`[debug] ${message}`));
+}
+
+async function logSkillDiscoveryDiagnostics(
+  basePath: string,
+  subpath: string | undefined,
+  options: Pick<AddOptions, 'debug' | 'skill' | 'fullDepth'>
+): Promise<void> {
+  if (!options.debug) return;
+
+  p.log.warn('Debug: skill discovery found no valid installable skills.');
+  logDebug(`search path: ${subpath ? `${basePath}/${subpath}` : basePath}`);
+  logDebug(`full depth: ${options.fullDepth ? 'enabled' : 'disabled'}`);
+  logDebug(
+    `include internal: ${options.skill && options.skill.length > 0 ? 'enabled' : 'disabled'}`
+  );
+
+  const diagnostics = await diagnoseSkillDiscovery(basePath, subpath, {
+    includeInternal: !!(options.skill && options.skill.length > 0),
+    fullDepth: options.fullDepth,
+  });
+  for (const item of diagnostics) {
+    logDebug(`${item.path}: ${item.reason}`);
+  }
+}
+
+function logHubNoSkillsDebug(
+  url: string,
+  options: Pick<AddOptions, 'debug' | 'force'>,
+  sourceOptions: { sourceType?: string; sourceIdentifier?: string; ref?: string }
+): void {
+  if (!options.debug) return;
+
+  p.log.warn('Debug: remote provider returned zero installable skills.');
+  logDebug(`provider: ${sourceOptions.sourceType ?? 'well-known'}`);
+  if (sourceOptions.sourceIdentifier) logDebug(`source: ${sourceOptions.sourceIdentifier}`);
+  if (sourceOptions.ref) logDebug(`ref: ${sourceOptions.ref}`);
+  logDebug(`url: ${url}`);
+  logDebug(`force refresh: ${options.force ? 'enabled' : 'disabled'}`);
+  logDebug(
+    'possible causes: backend returned no skills, SKILL.md failed validation, file fetch failed, or requested subpath/filter matched nothing'
+  );
 }
 
 function normalizeHubUrl(url: string): string {
@@ -509,6 +560,7 @@ async function handleWellKnownSkills(
 
   if (skills.length === 0) {
     spinner.stop(pc.red('No skills found'));
+    logHubNoSkillsDebug(url, options, sourceOptions);
     p.outro(
       pc.red(
         sourceOptions.emptyMessage ??
@@ -1167,6 +1219,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
     if (skills.length === 0) {
       spinner.stop(pc.red('No skills found'));
+      await logSkillDiscoveryDiagnostics(parsed.localPath! ?? tempDir!, parsed.subpath, options);
       p.outro(
         pc.red('No valid skills found. Skills require a SKILL.md with name and description.')
       );
@@ -1938,6 +1991,8 @@ export function parseAddOptions(args: string[]): { source: string[]; options: Ad
       options.copy = true;
     } else if (arg === '-f' || arg === '--force') {
       options.force = true;
+    } else if (arg === '--debug') {
+      options.debug = true;
     } else if (arg === '--dangerously-accept-openclaw-risks') {
       options.dangerouslyAcceptOpenclawRisks = true;
     } else if (arg && !arg.startsWith('-')) {

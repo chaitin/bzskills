@@ -74,6 +74,27 @@ This is a test skill.
     const result = runCli(['add', testDir, '-y'], testDir);
     expect(result.stdout).toContain('No skills found');
     expect(result.stdout).toContain('No valid skills found');
+    expect(result.stdout).not.toContain('[debug]');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('should explain invalid local skills in debug mode', () => {
+    const invalidDir = join(testDir, 'invalid-skill');
+    mkdirSync(invalidDir, { recursive: true });
+    writeFileSync(
+      join(invalidDir, 'SKILL.md'),
+      `---
+name: invalid-skill
+---
+
+# Invalid Skill
+`
+    );
+
+    const result = runCli(['add', testDir, '-y', '--debug'], testDir);
+    expect(result.stdout).toContain('Debug: skill discovery found no valid installable skills');
+    expect(result.stdout).toContain('SKILL.md');
+    expect(result.stdout).toContain('missing required description');
     expect(result.exitCode).toBe(1);
   });
 
@@ -445,6 +466,12 @@ describe('parseAddOptions', () => {
     const result = parseAddOptions(['source', '-f']);
     expect(result.source).toEqual(['source']);
     expect(result.options.force).toBe(true);
+  });
+
+  it('should parse --debug flag', () => {
+    const result = parseAddOptions(['source', '--debug']);
+    expect(result.source).toEqual(['source']);
+    expect(result.options.debug).toBe(true);
   });
 });
 

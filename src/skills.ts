@@ -99,6 +99,11 @@ export interface DiscoverSkillsOptions {
   fullDepth?: boolean;
 }
 
+export interface SkillDiscoveryDiagnostic {
+  path: string;
+  reason: string;
+}
+
 /**
  * Validates that a resolved subpath stays within the base directory.
  * Prevents path traversal attacks where subpath contains ".." segments
@@ -228,6 +233,82 @@ export async function discoverSkills(
   }
 
   return skills;
+}
+
+export async function diagnoseSkillDiscovery(
+  basePath: string,
+  subpath?: string,
+  options?: DiscoverSkillsOptions
+): Promise<SkillDiscoveryDiagnostic[]> {
+  if (subpath && !isSubpathSafe(basePath, subpath)) {
+    return [
+      {
+        path: subpath,
+        reason: 'subpath resolves outside the repository directory',
+      },
+    ];
+  }
+
+  const searchPath = subpath ? join(basePath, subpath) : basePath;
+  const skillDirs = await findSkillDirs(searchPath);
+  if (skillDirs.length === 0) {
+    return [
+      {
+        path: searchPath,
+        reason: 'no SKILL.md files found within the default search depth',
+      },
+    ];
+  }
+
+  const diagnostics: SkillDiscoveryDiagnostic[] = [];
+  for (const skillDir of skillDirs) {
+    const skillMdPath = join(skillDir, 'SKILL.md');
+    try {
+      const content = await readFile(skillMdPath, 'utf-8');
+      const { data } = parseFrontmatter(content);
+
+      if (!data.name && !data.description) {
+        diagnostics.push({ path: skillMdPath, reason: 'missing required name and description' });
+        continue;
+      }
+      if (!data.name) {
+        diagnostics.push({ path: skillMdPath, reason: 'missing required name' });
+        continue;
+      }
+      if (!data.description) {
+        diagnostics.push({ path: skillMdPath, reason: 'missing required description' });
+        continue;
+      }
+      if (typeof data.name !== 'string') {
+        diagnostics.push({ path: skillMdPath, reason: 'name must be a string' });
+        continue;
+      }
+      if (typeof data.description !== 'string') {
+        diagnostics.push({ path: skillMdPath, reason: 'description must be a string' });
+        continue;
+      }
+
+      const metadata =
+        data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
+          ? (data.metadata as Record<string, unknown>)
+          : undefined;
+      if (
+        metadata?.internal === true &&
+        !shouldInstallInternalSkills() &&
+        !options?.includeInternal
+      ) {
+        diagnostics.push({ path: skillMdPath, reason: 'internal skill hidden by default' });
+        continue;
+      }
+
+      diagnostics.push({ path: skillMdPath, reason: 'valid skill' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      diagnostics.push({ path: skillMdPath, reason: `failed to parse SKILL.md: ${message}` });
+    }
+  }
+
+  return diagnostics;
 }
 
 export function getSkillDisplayName(skill: Skill): string {
