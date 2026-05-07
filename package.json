@@ -1,6 +1,6 @@
 {
   "name": "bzskills",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "Skills Hub CLI for installing agent skills",
   "type": "module",
   "bin": {

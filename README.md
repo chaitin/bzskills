@@ -59,6 +59,7 @@ npx bzskills add ./my-local-skills
 | `-s, --skill <skills...>` | Install specific skills by name (use `'*'` for all skills)                                                                                         |
 | `-l, --list`              | List available skills without installing                                                                                                           |
 | `-f, --force`             | Force-refresh Hub-backed package metadata before installing                                                                                        |
+| `--debug`                 | Print detailed skill discovery diagnostics when no skills are found                                                                                |
 | `--copy`                  | Copy files instead of symlinking to agent directories                                                                                              |
 | `-y, --yes`               | Skip all confirmation prompts                                                                                                                      |
 | `--all`                   | Install all skills to all agents without prompts                                                                                                   |
@@ -427,6 +428,15 @@ shared [Agent Skills specification](https://agentskills.io). However, some featu
 ### "No skills found"
 
 Ensure the repository contains valid `SKILL.md` files with both `name` and `description` in the frontmatter.
+
+Run with `--debug` to print detailed discovery diagnostics:
+
+```bash
+npx bzskills add owner/repo --debug
+npx bzskills add ./my-local-skills --debug
+```
+
+Debug output can show whether `SKILL.md` files were missing, invalid, hidden as internal skills, or filtered by the requested path/source.
 
 ### Skill not loading in agent
 
