@@ -58,7 +58,12 @@ import {
   type AuditResponse,
   type PartnerAudit,
 } from './telemetry.ts';
-import { hubProvider, wellKnownProvider, type WellKnownSkill } from './providers/index.ts';
+import {
+  hubProvider,
+  wellKnownProvider,
+  type HubFetchDiagnostic,
+  type WellKnownSkill,
+} from './providers/index.ts';
 import {
   addSkillToLock,
   fetchSkillFolderHash,
@@ -475,7 +480,12 @@ async function logSkillDiscoveryDiagnostics(
 function logHubNoSkillsDebug(
   url: string,
   options: Pick<AddOptions, 'debug' | 'force'>,
-  sourceOptions: { sourceType?: string; sourceIdentifier?: string; ref?: string }
+  sourceOptions: {
+    sourceType?: string;
+    sourceIdentifier?: string;
+    ref?: string;
+    diagnostic?: HubFetchDiagnostic;
+  }
 ): void {
   if (!options.debug) return;
 
@@ -485,6 +495,15 @@ function logHubNoSkillsDebug(
   if (sourceOptions.ref) logDebug(`ref: ${sourceOptions.ref}`);
   logDebug(`url: ${url}`);
   logDebug(`force refresh: ${options.force ? 'enabled' : 'disabled'}`);
+  if (sourceOptions.diagnostic) {
+    logDebug(`package skills: ${sourceOptions.diagnostic.packageSkillCount}`);
+    logDebug(`matched skills: ${sourceOptions.diagnostic.matchedSkillCount}`);
+    logDebug(`fetched skills: ${sourceOptions.diagnostic.fetchedSkillCount}`);
+    logDebug(`failed skills: ${sourceOptions.diagnostic.failedSkillCount}`);
+    for (const [reason, count] of Object.entries(sourceOptions.diagnostic.failureReasons)) {
+      logDebug(`failure ${reason}: ${count}`);
+    }
+  }
   logDebug(
     'possible causes: backend returned no skills, SKILL.md failed validation, file fetch failed, or requested subpath/filter matched nothing'
   );
@@ -549,6 +568,7 @@ async function handleWellKnownSkills(
     requestHubUrl?: string;
     sourceUrl?: string;
     skills?: WellKnownSkill[];
+    diagnostic?: HubFetchDiagnostic;
     discoveryLabel?: string;
     emptyMessage?: string;
   } = {}
@@ -1118,9 +1138,14 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     // Handle Hub shorthand through the native Hub API.
     if (parsed.type === 'hub' && parsed.owner && parsed.repo) {
       const hubUrl = new URL(parsed.url).origin;
+      let hubDiagnostic: HubFetchDiagnostic | undefined;
       const hubSkills = await hubProvider.fetchAllSkills(parsed.url, {
         force: options.force,
         subpath: parsed.subpath,
+        skillNames: options.skill,
+        onDiagnostic: (diagnostic) => {
+          hubDiagnostic = diagnostic;
+        },
       });
       await handleWellKnownSkills(source, parsed.url, options, spinner, {
         sourceType: 'hub',
@@ -1128,6 +1153,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
         requestHubUrl: hubUrl,
         sourceUrl: parsed.url,
         skills: hubSkills,
+        diagnostic: hubDiagnostic,
         discoveryLabel: 'Discovering skills from Skills Hub...',
         emptyMessage: 'No skills found from Skills Hub for this package.',
       });
