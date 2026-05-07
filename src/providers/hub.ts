@@ -36,6 +36,12 @@ export interface HubFetchDiagnostic {
   failureReasons: Record<string, number>;
 }
 
+export interface HubFetchProgress {
+  completed: number;
+  total: number;
+  skillName: string;
+}
+
 export interface HubRateLimiter {
   wait(): Promise<void>;
 }
@@ -46,6 +52,7 @@ export interface HubFetchOptions {
   skillNames?: string[];
   concurrency?: number;
   onDiagnostic?: (diagnostic: HubFetchDiagnostic) => void;
+  onProgress?: (progress: HubFetchProgress) => void;
   rateLimiter?: HubRateLimiter;
 }
 
@@ -241,11 +248,23 @@ export class HubProvider implements HostProvider {
         (skill) => this.matchesSubpath(skill, options.subpath) && matchesSkillName(skill, names)
       );
       const rateLimiter = options.rateLimiter ?? createDefaultHubRateLimiter();
+      let completed = 0;
 
       const fetched = await mapWithConcurrency(
         skills,
         options.concurrency ?? DEFAULT_HUB_FETCH_CONCURRENCY,
-        (skill) => this.fetchSkillByName(url, skill.name, options, upstreamCommitSha, rateLimiter)
+        async (skill) => {
+          const result = await this.fetchSkillByName(
+            url,
+            skill.name,
+            options,
+            upstreamCommitSha,
+            rateLimiter
+          );
+          completed += 1;
+          options.onProgress?.({ completed, total: skills.length, skillName: skill.name });
+          return result;
+        }
       );
       options.onDiagnostic?.(summarizeHubFetch(metadata.skills.length, skills.length, fetched));
       return fetched

@@ -285,6 +285,69 @@ describe('skills CLI', () => {
       }
     }, 60000);
 
+    it('keeps Hub skill fetch progress on the spinner line while adding skills', async () => {
+      const projectDir = mkdtempSync(join(tmpdir(), 'bzskills-project-'));
+      try {
+        await withCustomHubServer(
+          (req, res) => {
+            res.setHeader('content-type', 'application/json');
+            if (req.url === '/openapi/v1/skills/owner/repo') {
+              res.end(
+                JSON.stringify({
+                  owner: 'owner',
+                  repo: 'repo',
+                  skills: [
+                    { name: 'first-skill', description: 'First skill' },
+                    { name: 'second-skill', description: 'Second skill' },
+                  ],
+                })
+              );
+              return;
+            }
+            const skillMatch = req.url?.match(
+              /^\/openapi\/v1\/skills\/owner\/repo\/skills\/(first-skill|second-skill)$/
+            );
+            if (skillMatch) {
+              const skillName = skillMatch[1]!;
+              res.end(
+                JSON.stringify({
+                  name: skillName,
+                  description: skillName,
+                  files: [
+                    {
+                      path: 'SKILL.md',
+                      digest: `sha256:${skillName}`,
+                      contents: `---\nname: ${skillName}\ndescription: ${skillName}\n---\n\n# ${skillName}\n`,
+                    },
+                  ],
+                })
+              );
+              return;
+            }
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: 'not found' }));
+          },
+          async (baseUrl) => {
+            const result = await runCliAsync(
+              ['add', 'owner/repo', '-y', '--agent', 'claude-code'],
+              {
+                SKILLS_HUB_URL: baseUrl,
+                XDG_STATE_HOME: join(projectDir, '.state'),
+              },
+              projectDir
+            );
+
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).not.toContain('1/2 first-skill');
+            expect(result.stdout).not.toContain('2/2 second-skill');
+            expect(result.stdout).toContain('Fetched 2 skills');
+          }
+        );
+      } finally {
+        rmSync(projectDir, { recursive: true, force: true });
+      }
+    }, 60000);
+
     it('checks Hub global skills by digest instead of skipping them', async () => {
       const fileDigest = 'sha256:skill';
       const hubDigest = sha256(`SKILL.md\0${fileDigest}`);

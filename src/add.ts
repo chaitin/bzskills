@@ -1139,6 +1139,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     if (parsed.type === 'hub' && parsed.owner && parsed.repo) {
       const hubUrl = new URL(parsed.url).origin;
       let hubDiagnostic: HubFetchDiagnostic | undefined;
+      spinner.start('Fetching skills from Skills Hub...');
       const hubSkills = await hubProvider.fetchAllSkills(parsed.url, {
         force: options.force,
         subpath: parsed.subpath,
@@ -1146,7 +1147,13 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
         onDiagnostic: (diagnostic) => {
           hubDiagnostic = diagnostic;
         },
+        onProgress: ({ completed, total, skillName }) => {
+          spinner.message(`${completed}/${total} ${skillName}`);
+        },
       });
+      spinner.stop(
+        `Fetched ${pc.green(hubSkills.length)} skill${hubSkills.length !== 1 ? 's' : ''}`
+      );
       await handleWellKnownSkills(source, parsed.url, options, spinner, {
         sourceType: 'hub',
         sourceIdentifier: `${parsed.owner}/${parsed.repo}`,
