@@ -6,7 +6,7 @@ import { createServer, type Server } from 'http';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { runCli, runCliOutput, stripLogo, hasLogo } from './test-utils.ts';
+import { runCli, runCliOutput, stripAnsi, stripLogo, hasLogo } from './test-utils.ts';
 
 const CLI_PATH = join(import.meta.dirname, 'cli.ts');
 
@@ -338,9 +338,10 @@ describe('skills CLI', () => {
             );
 
             expect(result.exitCode).toBe(0);
-            expect(result.stdout).not.toContain('1/2 first-skill');
-            expect(result.stdout).not.toContain('2/2 second-skill');
-            expect(result.stdout).toContain('Fetched 2 skills');
+            const stdout = stripAnsi(result.stdout);
+            expect(stdout).not.toContain('1/2 first-skill');
+            expect(stdout).not.toContain('2/2 second-skill');
+            expect(stdout).toContain('Fetched 2 skills');
           }
         );
       } finally {
