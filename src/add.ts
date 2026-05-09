@@ -1,8 +1,10 @@
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import { existsSync } from 'fs';
+import { lstat, readFile, readdir } from 'fs/promises';
 import { homedir } from 'os';
-import { sep } from 'path';
+import { join, sep } from 'path';
+import { createHash } from 'crypto';
 import {
   parseSource,
   getOwnerRepo,
@@ -201,6 +203,68 @@ function formatList(items: string[], maxShow: number = 5): string {
 
 function uniquePaths(results: Array<{ path: string }>): string[] {
   return [...new Set(results.map((result) => result.path))];
+}
+
+function contentDigest(contents: string | Uint8Array): string {
+  return `sha256:${createHash('sha256').update(contents).digest('hex')}`;
+}
+
+function fileSetDigest(files: Array<{ path: string; digest: string }>): string {
+  const parts = files.map((file) => `${file.path}\0${file.digest}`).sort();
+  return contentDigest(parts.join('\n'));
+}
+
+function isTextSkillAsset(path: string): boolean {
+  const lower = path.toLowerCase();
+  return (
+    lower.endsWith('.md') ||
+    lower.endsWith('.json') ||
+    lower.endsWith('.yaml') ||
+    lower.endsWith('.yml') ||
+    lower.endsWith('.txt') ||
+    lower.endsWith('.sh') ||
+    lower.endsWith('.ts') ||
+    lower.endsWith('.js') ||
+    lower.endsWith('.py')
+  );
+}
+
+async function skillDirectoryDigest(skillDir: string): Promise<string> {
+  const files: Array<{ path: string; digest: string }> = [];
+
+  async function collect(currentDir: string, relativePrefix = ''): Promise<void> {
+    const entries = await readdir(currentDir, { withFileTypes: true });
+    await Promise.all(
+      entries.map(async (entry) => {
+        if (entry.name === '.git' || entry.name === 'node_modules') return;
+        const fullPath = join(currentDir, entry.name);
+        const relativePath = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          await collect(fullPath, relativePath);
+        } else if (entry.isFile()) {
+          if (!isTextSkillAsset(relativePath)) return;
+          const info = await lstat(fullPath);
+          if (!info.isFile() || info.isSymbolicLink()) return;
+          files.push({ path: relativePath, digest: contentDigest(await readFile(fullPath)) });
+        }
+      })
+    );
+  }
+
+  await collect(skillDir);
+  return fileSetDigest(files);
+}
+
+async function getInstallReportDigest(skill: Skill | BlobSkill): Promise<string> {
+  if ('files' in skill) {
+    const files = skill.files.map((file) => ({
+      path: file.path,
+      digest: contentDigest(file.contents),
+    }));
+    return fileSetDigest(files);
+  }
+
+  return skillDirectoryDigest(skill.path);
 }
 
 /**
@@ -1764,6 +1828,32 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
             ...(installGlobally && { global: '1' }),
             skillFiles: JSON.stringify(skillFiles),
           });
+
+          if (parsed.type === 'github' && successful.length > 0) {
+            const successfulSkillNames = new Set(successful.map((r) => r.skill));
+            for (const skill of selectedSkills) {
+              if (!successfulSkillNames.has(getSkillDisplayName(skill))) continue;
+              const reported = await sendInstallReport(
+                getSkillsHubUrl(),
+                {
+                  source: normalizedSource,
+                  skillName: skill.name,
+                  digest: await getInstallReportDigest(skill),
+                  agents: targetAgents,
+                  global: installGlobally,
+                },
+                undefined,
+                { reportDefaultHub: true }
+              );
+              if (!reported) {
+                p.log.warn(
+                  pc.yellow(
+                    `Install report for ${skill.name} could not be sent to ${getSkillsHubUrl()}; installation was not affected.`
+                  )
+                );
+              }
+            }
+          }
         }
       } else {
         // If we can't parse owner/repo, still send telemetry (for non-GitHub sources)

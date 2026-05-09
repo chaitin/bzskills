@@ -72,4 +72,36 @@ describe('sendInstallReport', () => {
       global: true,
     });
   });
+
+  it('reports installs to the default Hub when explicitly requested', async () => {
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) =>
+        new Response('{"created":true}', { status: 202 })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const sent = await sendInstallReport(
+      DEFAULT_SKILLS_HUB_URL,
+      {
+        source: 'anthropics/skills',
+        skillName: 'test-skill',
+        digest: 'sha256:test',
+        agents: ['opencode'],
+        global: false,
+      },
+      undefined,
+      { reportDefaultHub: true }
+    );
+
+    expect(sent).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe(`${DEFAULT_SKILLS_HUB_URL}/openapi/install-reports`);
+    expect(JSON.parse(String(init!.body))).toMatchObject({
+      defaultHubUrl: DEFAULT_SKILLS_HUB_URL,
+      source: 'anthropics/skills',
+      skillName: 'test-skill',
+      digest: 'sha256:test',
+    });
+  });
 });

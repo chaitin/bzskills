@@ -1,5 +1,9 @@
 import { getSkillsHubUrl } from './source-parser.ts';
 
+interface SendInstallReportOptions {
+  reportDefaultHub?: boolean;
+}
+
 interface InstallTelemetryData {
   event: 'install';
   source: string;
@@ -107,12 +111,13 @@ export function track(data: TelemetryData): void {
 export async function sendInstallReport(
   requestHubUrl: string,
   report: InstallReportData,
-  defaultHubUrl = getSkillsHubUrl()
+  defaultHubUrl = getSkillsHubUrl(),
+  options: SendInstallReportOptions = {}
 ): Promise<boolean> {
   const normalizedRequestHubUrl = normalizeHubUrl(requestHubUrl);
   const normalizedDefaultHubUrl = normalizeHubUrl(defaultHubUrl);
 
-  if (normalizedRequestHubUrl === normalizedDefaultHubUrl) {
+  if (!options.reportDefaultHub && normalizedRequestHubUrl === normalizedDefaultHubUrl) {
     return false;
   }
 
