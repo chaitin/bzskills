@@ -2072,6 +2072,20 @@ async function cleanup(tempDir: string | null) {
   }
 }
 
+function normalizeCopiedAddCommandSource(source: string[]): string[] {
+  const [runner, binary, command, ...rest] = source;
+  if (
+    runner === 'npx' &&
+    (binary === 'skills' || binary === 'bzskills') &&
+    (command === 'add' || command === 'a' || command === 'install' || command === 'i') &&
+    rest.length > 0
+  ) {
+    return rest;
+  }
+
+  return source;
+}
+
 // Parse command line options from args array
 export function parseAddOptions(args: string[]): { source: string[]; options: AddOptions } {
   const options: AddOptions = {};
@@ -2123,5 +2137,5 @@ export function parseAddOptions(args: string[]): { source: string[]; options: Ad
     }
   }
 
-  return { source, options };
+  return { source: normalizeCopiedAddCommandSource(source), options };
 }

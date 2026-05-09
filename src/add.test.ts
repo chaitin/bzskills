@@ -473,6 +473,29 @@ describe('parseAddOptions', () => {
     expect(result.source).toEqual(['source']);
     expect(result.options.debug).toBe(true);
   });
+
+  it('normalizes a copied npx skills add command to its intended source', () => {
+    const result = parseAddOptions([
+      'npx',
+      'skills',
+      'add',
+      'https://github.com/anthropics/skills',
+    ]);
+
+    expect(result.source).toEqual(['https://github.com/anthropics/skills']);
+  });
+
+  it('normalizes a copied npx bzskills install command to its intended source', () => {
+    const result = parseAddOptions(['npx', 'bzskills', 'install', 'owner/repo']);
+
+    expect(result.source).toEqual(['owner/repo']);
+  });
+
+  it('does not reinterpret arbitrary extra positional arguments', () => {
+    const result = parseAddOptions(['foo', 'bar', 'https://github.com/anthropics/skills']);
+
+    expect(result.source).toEqual(['foo', 'bar', 'https://github.com/anthropics/skills']);
+  });
 });
 
 describe('openclaw source blocking', () => {
