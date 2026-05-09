@@ -1250,7 +1250,9 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
           hubDiagnostic = diagnostic;
         },
         onProgress: ({ completed, total, skillName }) => {
-          spinner.message(`${completed}/${total} ${skillName}`);
+          if (process.stdout.isTTY) {
+            spinner.message(`${completed}/${total} ${skillName}`);
+          }
         },
       });
       spinner.stop(
