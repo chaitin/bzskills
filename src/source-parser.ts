@@ -2,6 +2,7 @@ import { isAbsolute, resolve } from 'path';
 import type { ParsedSource } from './types.ts';
 
 export const DEFAULT_SKILLS_HUB_URL = 'https://skillshub.app.baizhi.cloud';
+const GITHUB_PRIVACY_CHECK_TIMEOUT_MS = 1500;
 
 export function getSkillsHubUrl(): string {
   return (process.env.SKILLS_HUB_URL || DEFAULT_SKILLS_HUB_URL).replace(/\/$/, '');
@@ -76,7 +77,9 @@ export function parseOwnerRepo(ownerRepo: string): { owner: string; repo: string
  */
 export async function isRepoPrivate(owner: string, repo: string): Promise<boolean | null> {
   try {
-    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+      signal: AbortSignal.timeout(GITHUB_PRIVACY_CHECK_TIMEOUT_MS),
+    });
 
     // If repo doesn't exist or we don't have access, assume private to be safe
     if (!res.ok) {
