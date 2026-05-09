@@ -56,7 +56,7 @@ import {
   track,
   setVersion,
   fetchAuditData,
-  sendInstallReport,
+  sendInstallReports,
   type AuditResponse,
   type PartnerAudit,
 } from './telemetry.ts';
@@ -265,6 +265,45 @@ async function getInstallReportDigest(skill: Skill | BlobSkill): Promise<string>
   }
 
   return skillDirectoryDigest(skill.path);
+}
+
+async function sendDirectGitHubInstallReports(
+  skills: Skill[],
+  successfulSkillNames: Set<string>,
+  source: string,
+  debug: boolean | undefined
+): Promise<void> {
+  const hubUrl = getSkillsHubUrl();
+  const reportSkills = await Promise.all(
+    skills
+      .filter((skill) => successfulSkillNames.has(getSkillDisplayName(skill)))
+      .map(async (skill) => {
+        return {
+          skillName: skill.name,
+          digest: await getInstallReportDigest(skill),
+        };
+      })
+  );
+
+  if (reportSkills.length === 0) return;
+
+  const reported = await sendInstallReports(
+    hubUrl,
+    {
+      source,
+      skills: reportSkills,
+    },
+    undefined,
+    { reportDefaultHub: true }
+  );
+
+  if (!reported && debug) {
+    p.log.warn(
+      pc.yellow(
+        `Install reports for ${reportSkills.length} skill${reportSkills.length !== 1 ? 's' : ''} could not be sent to ${hubUrl}; installation was not affected.`
+      )
+    );
+  }
 }
 
 /**
@@ -981,26 +1020,25 @@ async function handleWellKnownSkills(
   }
 
   if (sourceOptions.requestHubUrl) {
-    for (const skill of selectedSkills) {
-      const reported = await sendInstallReport(sourceOptions.requestHubUrl, {
-        source: sourceIdentifier,
+    const reported = await sendInstallReports(sourceOptions.requestHubUrl, {
+      source: sourceIdentifier,
+      skills: selectedSkills.map((skill) => ({
         skillName: skill.installName,
         digest: skill.indexEntry.digest || skill.sourceUrl,
-        upstreamCommitSha: skill.upstreamCommitSha,
-        agents: targetAgents,
-        global: installGlobally,
-      });
-      if (reported) {
-        p.log.message(
-          pc.dim(`Reported install for ${skill.installName} to ${sourceOptions.requestHubUrl}`)
-        );
-      } else if (!isDefaultInstallReportHub(sourceOptions.requestHubUrl)) {
-        p.log.warn(
-          pc.yellow(
-            `Install report for ${skill.installName} could not be sent to ${sourceOptions.requestHubUrl}; installation was not affected.`
-          )
-        );
-      }
+      })),
+    });
+    if (reported) {
+      p.log.message(
+        pc.dim(
+          `Reported install for ${selectedSkills.length} skill${selectedSkills.length !== 1 ? 's' : ''} to ${sourceOptions.requestHubUrl}`
+        )
+      );
+    } else if (options.debug && !isDefaultInstallReportHub(sourceOptions.requestHubUrl)) {
+      p.log.warn(
+        pc.yellow(
+          `Install reports for ${selectedSkills.length} skill${selectedSkills.length !== 1 ? 's' : ''} could not be sent to ${sourceOptions.requestHubUrl}; installation was not affected.`
+        )
+      );
     }
   }
 
@@ -1815,9 +1853,19 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     if (normalizedSource) {
       const ownerRepo = parseOwnerRepo(normalizedSource);
       if (ownerRepo) {
-        // Check if repo is private - skip telemetry for private repos
+        if (parsed.type === 'github' && successful.length > 0) {
+          const successfulSkillNames = new Set(successful.map((r) => r.skill));
+          await sendDirectGitHubInstallReports(
+            selectedSkills,
+            successfulSkillNames,
+            normalizedSource,
+            options.debug
+          );
+        }
+
+        // Check if repo is private - skip legacy local tracking for private repos
         const isPrivate = await isRepoPrivate(ownerRepo.owner, ownerRepo.repo);
-        // Only send telemetry if repo is public (isPrivate === false)
+        // Only send legacy local tracking if repo is public (isPrivate === false)
         // If we can't determine (null), err on the side of caution and skip telemetry
         if (isPrivate === false) {
           track({
@@ -1828,32 +1876,6 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
             ...(installGlobally && { global: '1' }),
             skillFiles: JSON.stringify(skillFiles),
           });
-
-          if (parsed.type === 'github' && successful.length > 0) {
-            const successfulSkillNames = new Set(successful.map((r) => r.skill));
-            for (const skill of selectedSkills) {
-              if (!successfulSkillNames.has(getSkillDisplayName(skill))) continue;
-              const reported = await sendInstallReport(
-                getSkillsHubUrl(),
-                {
-                  source: normalizedSource,
-                  skillName: skill.name,
-                  digest: await getInstallReportDigest(skill),
-                  agents: targetAgents,
-                  global: installGlobally,
-                },
-                undefined,
-                { reportDefaultHub: true }
-              );
-              if (!reported) {
-                p.log.warn(
-                  pc.yellow(
-                    `Install report for ${skill.name} could not be sent to ${getSkillsHubUrl()}; installation was not affected.`
-                  )
-                );
-              }
-            }
-          }
         }
       } else {
         // If we can't parse owner/repo, still send telemetry (for non-GitHub sources)

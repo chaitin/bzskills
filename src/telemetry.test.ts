@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SKILLS_HUB_URL } from './source-parser.ts';
-import { sendInstallReport } from './telemetry.ts';
+import { sendInstallReport, sendInstallReports } from './telemetry.ts';
 
 describe('sendInstallReport', () => {
   afterEach(() => {
@@ -16,8 +16,6 @@ describe('sendInstallReport', () => {
       source: 'alice/repo',
       skillName: 'remote-skill',
       digest: 'sha256:test',
-      agents: ['opencode'],
-      global: false,
     });
 
     expect(sent).toBe(false);
@@ -33,8 +31,6 @@ describe('sendInstallReport', () => {
       source: 'alice/repo',
       skillName: 'remote-skill',
       digest: 'sha256:test',
-      agents: ['opencode'],
-      global: false,
     });
 
     expect(sent).toBe(false);
@@ -52,9 +48,6 @@ describe('sendInstallReport', () => {
       source: 'alice/repo',
       skillName: 'remote-skill',
       digest: 'sha256:test',
-      upstreamCommitSha: 'commit-sha',
-      agents: ['opencode'],
-      global: true,
     });
 
     expect(sent).toBe(true);
@@ -63,13 +56,13 @@ describe('sendInstallReport', () => {
     expect(url).toBe('https://custom-hub.example.com/openapi/install-reports');
     expect(init).toBeDefined();
     expect(JSON.parse(String(init!.body))).toMatchObject({
-      defaultHubUrl: DEFAULT_SKILLS_HUB_URL,
       source: 'alice/repo',
-      skillName: 'remote-skill',
-      digest: 'sha256:test',
-      upstreamCommitSha: 'commit-sha',
-      agents: ['opencode'],
-      global: true,
+      skills: [
+        {
+          skillName: 'remote-skill',
+          digest: 'sha256:test',
+        },
+      ],
     });
   });
 
@@ -86,8 +79,6 @@ describe('sendInstallReport', () => {
         source: 'anthropics/skills',
         skillName: 'test-skill',
         digest: 'sha256:test',
-        agents: ['opencode'],
-        global: false,
       },
       undefined,
       { reportDefaultHub: true }
@@ -98,10 +89,57 @@ describe('sendInstallReport', () => {
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe(`${DEFAULT_SKILLS_HUB_URL}/openapi/install-reports`);
     expect(JSON.parse(String(init!.body))).toMatchObject({
-      defaultHubUrl: DEFAULT_SKILLS_HUB_URL,
       source: 'anthropics/skills',
-      skillName: 'test-skill',
-      digest: 'sha256:test',
+      skills: [{ skillName: 'test-skill', digest: 'sha256:test' }],
     });
+  });
+
+  it('reports multiple installs in a single request', async () => {
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) =>
+        new Response('{"accepted":true}', { status: 202 })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const sent = await sendInstallReports('https://custom-hub.example.com', {
+      source: 'alice/repo',
+      skills: [
+        { skillName: 'one-skill', digest: 'sha256:one' },
+        { skillName: 'two-skill', digest: 'sha256:two' },
+      ],
+    });
+
+    expect(sent).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse(String(init!.body))).toMatchObject({
+      source: 'alice/repo',
+      skills: [
+        { skillName: 'one-skill', digest: 'sha256:one' },
+        { skillName: 'two-skill', digest: 'sha256:two' },
+      ],
+    });
+  });
+
+  it('sets a timeout signal on install report requests', async () => {
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) =>
+        new Response('{"created":true}', { status: 202 })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await sendInstallReport(
+      'https://custom-hub.example.com',
+      {
+        source: 'alice/repo',
+        skillName: 'remote-skill',
+        digest: 'sha256:test',
+      },
+      undefined,
+      { timeoutMs: 1234 }
+    );
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
   });
 });

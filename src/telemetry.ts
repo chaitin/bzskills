@@ -2,7 +2,10 @@ import { getSkillsHubUrl } from './source-parser.ts';
 
 interface SendInstallReportOptions {
   reportDefaultHub?: boolean;
+  timeoutMs?: number;
 }
+
+const DEFAULT_INSTALL_REPORT_TIMEOUT_MS = 1500;
 
 interface InstallTelemetryData {
   event: 'install';
@@ -75,14 +78,19 @@ export type SkillAuditData = Record<string, PartnerAudit>;
 export type AuditResponse = Record<string, SkillAuditData>;
 
 export interface InstallReportData {
-  defaultHubUrl?: string;
   source: string;
   skillName: string;
-  installedAt?: string;
   digest: string;
-  upstreamCommitSha?: string;
-  agents: string[];
-  global: boolean;
+}
+
+export interface InstallReportSkillData {
+  skillName: string;
+  digest: string;
+}
+
+export interface InstallReportsData {
+  source: string;
+  skills: InstallReportSkillData[];
 }
 
 function normalizeHubUrl(url: string): string {
@@ -114,6 +122,28 @@ export async function sendInstallReport(
   defaultHubUrl = getSkillsHubUrl(),
   options: SendInstallReportOptions = {}
 ): Promise<boolean> {
+  return sendInstallReports(
+    requestHubUrl,
+    {
+      source: report.source,
+      skills: [
+        {
+          skillName: report.skillName,
+          digest: report.digest,
+        },
+      ],
+    },
+    defaultHubUrl,
+    options
+  );
+}
+
+export async function sendInstallReports(
+  requestHubUrl: string,
+  report: InstallReportsData,
+  defaultHubUrl = getSkillsHubUrl(),
+  options: SendInstallReportOptions = {}
+): Promise<boolean> {
   const normalizedRequestHubUrl = normalizeHubUrl(requestHubUrl);
   const normalizedDefaultHubUrl = normalizeHubUrl(defaultHubUrl);
 
@@ -122,18 +152,17 @@ export async function sendInstallReport(
   }
 
   try {
+    const timeoutMs = options.timeoutMs ?? DEFAULT_INSTALL_REPORT_TIMEOUT_MS;
     const response = await fetch(`${normalizedRequestHubUrl}/openapi/install-reports`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
       body: JSON.stringify({
-        defaultHubUrl: normalizedDefaultHubUrl,
         source: report.source,
-        skillName: report.skillName,
-        installedAt: report.installedAt ?? new Date().toISOString(),
-        digest: report.digest,
-        upstreamCommitSha: report.upstreamCommitSha ?? '',
-        agents: report.agents,
-        global: report.global,
+        skills: report.skills.map((skill) => ({
+          skillName: skill.skillName,
+          digest: skill.digest,
+        })),
       }),
     });
 

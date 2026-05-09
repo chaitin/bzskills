@@ -3,9 +3,10 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { createHash } from 'crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as p from '@clack/prompts';
 import { runAdd } from './add.ts';
 import { DEFAULT_SKILLS_HUB_URL, isRepoPrivate } from './source-parser.ts';
-import { sendInstallReport } from './telemetry.ts';
+import { sendInstallReports } from './telemetry.ts';
 
 vi.mock('./git.ts', async () => {
   const actual = await vi.importActual<typeof import('./git.ts')>('./git.ts');
@@ -29,7 +30,7 @@ vi.mock('./telemetry.ts', async () => {
   return {
     ...actual,
     track: vi.fn(),
-    sendInstallReport: vi.fn(async () => true),
+    sendInstallReports: vi.fn(async () => true),
   };
 });
 
@@ -93,22 +94,41 @@ describe('GitHub add install reporting', () => {
       global: false,
     });
 
-    expect(sendInstallReport).toHaveBeenCalledTimes(1);
-    expect(sendInstallReport).toHaveBeenCalledWith(
+    expect(sendInstallReports).toHaveBeenCalledTimes(1);
+    expect(sendInstallReports).toHaveBeenCalledWith(
       DEFAULT_SKILLS_HUB_URL,
       expect.objectContaining({
         source: 'anthropics/skills',
-        skillName: 'test-skill',
-        digest: expectedDigest,
-        agents: ['opencode'],
-        global: false,
+        skills: [{ skillName: 'test-skill', digest: expectedDigest }],
       }),
       undefined,
       { reportDefaultHub: true }
     );
   });
 
-  it.each([true, null])('does not report when GitHub privacy is %s', async (privacy) => {
+  it('reports multiple successful direct GitHub installs in one batch', async () => {
+    await mkdir(join(repoDir, 'skills', 'another-skill'), { recursive: true });
+    await writeFile(
+      join(repoDir, 'skills', 'another-skill', 'SKILL.md'),
+      '---\nname: another-skill\ndescription: Another skill\n---\n\n# Another Skill\n',
+      'utf-8'
+    );
+
+    await runAdd(['https://github.com/anthropics/skills'], {
+      yes: true,
+      agent: ['opencode'],
+      global: false,
+    });
+
+    expect(sendInstallReports).toHaveBeenCalledTimes(1);
+    const [, payload] = vi.mocked(sendInstallReports).mock.calls[0]!;
+    expect(payload.skills.map((skill) => skill.skillName).sort()).toEqual([
+      'another-skill',
+      'test-skill',
+    ]);
+  });
+
+  it.each([true, null])('reports even when GitHub privacy is %s', async (privacy) => {
     vi.mocked(isRepoPrivate).mockResolvedValue(privacy);
 
     await runAdd(['https://github.com/anthropics/skills'], {
@@ -118,6 +138,35 @@ describe('GitHub add install reporting', () => {
       global: false,
     });
 
-    expect(sendInstallReport).not.toHaveBeenCalled();
+    expect(sendInstallReports).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not warn about report failures without debug', async () => {
+    vi.mocked(sendInstallReports).mockResolvedValueOnce(false);
+    const warnSpy = vi.spyOn(p.log, 'warn');
+
+    await runAdd(['https://github.com/anthropics/skills'], {
+      yes: true,
+      agent: ['opencode'],
+      skill: ['test-skill'],
+      global: false,
+    });
+
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('could not be sent'));
+  });
+
+  it('warns about report failures with debug', async () => {
+    vi.mocked(sendInstallReports).mockResolvedValueOnce(false);
+    const warnSpy = vi.spyOn(p.log, 'warn');
+
+    await runAdd(['https://github.com/anthropics/skills'], {
+      yes: true,
+      agent: ['opencode'],
+      skill: ['test-skill'],
+      global: false,
+      debug: true,
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('could not be sent'));
   });
 });
