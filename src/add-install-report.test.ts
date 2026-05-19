@@ -99,6 +99,7 @@ describe('GitHub add install reporting', () => {
       DEFAULT_SKILLS_HUB_URL,
       expect.objectContaining({
         source: 'anthropics/skills',
+        sourceUrl: 'https://github.com/anthropics/skills.git',
         skills: [{ skillName: 'test-skill', digest: expectedDigest }],
       }),
       undefined,
@@ -168,5 +169,27 @@ describe('GitHub add install reporting', () => {
     });
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('could not be sent'));
+  });
+
+  it('reports successful non-GitHub direct git installs with sourceUrl', async () => {
+    await runAdd(['https://deploy.baizhi.cloud/gitops-admin/agent-skills.git'], {
+      yes: true,
+      agent: ['opencode'],
+      skill: ['test-skill'],
+      global: false,
+      fullDepth: true,
+    });
+
+    expect(sendInstallReports).toHaveBeenCalledTimes(1);
+    expect(sendInstallReports).toHaveBeenCalledWith(
+      DEFAULT_SKILLS_HUB_URL,
+      expect.objectContaining({
+        source: 'gitops-admin/agent-skills',
+        sourceUrl: 'https://deploy.baizhi.cloud/gitops-admin/agent-skills.git',
+        skills: [expect.objectContaining({ skillName: 'test-skill' })],
+      }),
+      undefined,
+      { reportDefaultHub: true }
+    );
   });
 });

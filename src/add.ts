@@ -267,10 +267,11 @@ async function getInstallReportDigest(skill: Skill | BlobSkill): Promise<string>
   return skillDirectoryDigest(skill.path);
 }
 
-async function sendDirectGitHubInstallReports(
+async function sendDirectGitInstallReports(
   skills: Skill[],
   successfulSkillNames: Set<string>,
   source: string,
+  sourceUrl: string,
   debug: boolean | undefined
 ): Promise<void> {
   const hubUrl = getSkillsHubUrl();
@@ -291,6 +292,7 @@ async function sendDirectGitHubInstallReports(
     hubUrl,
     {
       source,
+      sourceUrl,
       skills: reportSkills,
     },
     undefined,
@@ -1855,12 +1857,16 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     if (normalizedSource) {
       const ownerRepo = parseOwnerRepo(normalizedSource);
       if (ownerRepo) {
-        if (parsed.type === 'github' && successful.length > 0) {
+        if (
+          (parsed.type === 'github' || parsed.type === 'gitlab' || parsed.type === 'git') &&
+          successful.length > 0
+        ) {
           const successfulSkillNames = new Set(successful.map((r) => r.skill));
-          await sendDirectGitHubInstallReports(
+          await sendDirectGitInstallReports(
             selectedSkills,
             successfulSkillNames,
             normalizedSource,
+            parsed.url,
             options.debug
           );
         }
