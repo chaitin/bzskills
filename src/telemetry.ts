@@ -90,7 +90,7 @@ export interface InstallReportSkillData {
 
 export interface InstallReportsData {
   source: string;
-  sourceUrl?: string;
+  sourceDomain?: string;
   skills: InstallReportSkillData[];
 }
 
@@ -160,7 +160,7 @@ export async function sendInstallReports(
       signal: AbortSignal.timeout(timeoutMs),
       body: JSON.stringify({
         source: report.source,
-        ...(report.sourceUrl ? { sourceUrl: report.sourceUrl } : {}),
+        ...(report.sourceDomain ? { sourceDomain: report.sourceDomain } : {}),
         skills: report.skills.map((skill) => ({
           skillName: skill.skillName,
           digest: skill.digest,

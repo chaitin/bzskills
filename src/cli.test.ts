@@ -227,6 +227,35 @@ describe('skills CLI', () => {
       }
     }, 60000);
 
+    it('ignores --direct for explicit native Hub package URLs', async () => {
+      const projectDir = mkdtempSync(join(tmpdir(), 'bzskills-project-'));
+      try {
+        await withHubServer('sha256:skill', async (baseUrl) => {
+          const result = await runCliAsync(
+            [
+              'add',
+              `${baseUrl}/openapi/v1/skills/owner/repo`,
+              '--direct',
+              '-y',
+              '--agent',
+              'claude-code',
+            ],
+            { XDG_STATE_HOME: join(projectDir, '.state') },
+            projectDir
+          );
+
+          expect(result.exitCode).toBe(0);
+          const lock = JSON.parse(readFileSync(join(projectDir, 'skills-lock.json'), 'utf-8'));
+          expect(lock.skills['my-skill']).toMatchObject({
+            sourceType: 'hub',
+            sourceUrl: `${baseUrl}/openapi/v1/skills/owner/repo`,
+          });
+        });
+      } finally {
+        rmSync(projectDir, { recursive: true, force: true });
+      }
+    }, 60000);
+
     it('passes --skill filters to native Hub package metadata requests', async () => {
       const projectDir = mkdtempSync(join(tmpdir(), 'bzskills-project-'));
       const requested: string[] = [];
@@ -278,6 +307,93 @@ describe('skills CLI', () => {
               '/openapi/v1/skills/owner/repo?skill=my-skill',
               '/openapi/v1/skills/owner/repo/skills/my-skill',
             ]);
+          }
+        );
+      } finally {
+        rmSync(projectDir, { recursive: true, force: true });
+      }
+    }, 60000);
+
+    it('routes non-GitHub git URLs through Hub with source origin by default', async () => {
+      const projectDir = mkdtempSync(join(tmpdir(), 'bzskills-project-'));
+      const requested: string[] = [];
+      const skillContent =
+        '---\nname: gitops-app-onboarding\ndescription: GitOps onboarding\n---\n\n# GitOps\n';
+      const sourceDomain = 'example.com';
+      const encodedSourceDomain = encodeURIComponent(sourceDomain);
+
+      try {
+        await withCustomHubServer(
+          (req, res) => {
+            requested.push(req.url || '');
+            res.setHeader('content-type', 'application/json');
+            if (
+              req.url ===
+              `/openapi/v1/skills/vercel-labs/agent-skills?sourceDomain=${encodedSourceDomain}&skill=gitops-app-onboarding`
+            ) {
+              res.end(
+                JSON.stringify({
+                  owner: 'gitops-admin',
+                  repo: 'agent-skills',
+                  skills: [
+                    {
+                      name: 'gitops-app-onboarding',
+                      description: 'GitOps onboarding',
+                      entryPath: 'skills/gitops-app-onboarding',
+                    },
+                  ],
+                })
+              );
+              return;
+            }
+            if (
+              req.url ===
+              `/openapi/v1/skills/vercel-labs/agent-skills/skills/gitops-app-onboarding?sourceDomain=${encodedSourceDomain}`
+            ) {
+              res.end(
+                JSON.stringify({
+                  name: 'gitops-app-onboarding',
+                  description: 'GitOps onboarding',
+                  entryPath: 'skills/gitops-app-onboarding',
+                  files: [{ path: 'SKILL.md', digest: 'sha256:skill', contents: skillContent }],
+                })
+              );
+              return;
+            }
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: 'not found' }));
+          },
+          async (baseUrl) => {
+            const result = await runCliAsync(
+              [
+                'add',
+                'https://example.com/vercel-labs/agent-skills.git',
+                '--skill',
+                'gitops-app-onboarding',
+                '-y',
+                '--agent',
+                'claude-code',
+              ],
+              {
+                SKILLS_HUB_URL: baseUrl,
+                XDG_STATE_HOME: join(projectDir, '.state'),
+              },
+              projectDir
+            );
+
+            expect(result.exitCode).toBe(0);
+            expect(requested).toEqual([
+              `/openapi/v1/skills/vercel-labs/agent-skills?sourceDomain=${encodedSourceDomain}&skill=gitops-app-onboarding`,
+              `/openapi/v1/skills/vercel-labs/agent-skills/skills/gitops-app-onboarding?sourceDomain=${encodedSourceDomain}`,
+            ]);
+
+            const lock = JSON.parse(readFileSync(join(projectDir, 'skills-lock.json'), 'utf-8'));
+            expect(lock.skills['gitops-app-onboarding']).toMatchObject({
+              source: 'vercel-labs/agent-skills',
+              sourceType: 'hub',
+              sourceUrl: `${baseUrl}/openapi/v1/skills/vercel-labs/agent-skills`,
+              sourceDomain,
+            });
           }
         );
       } finally {
@@ -441,6 +557,83 @@ describe('skills CLI', () => {
             expect(requested).toEqual([
               '/openapi/v1/skills/owner/repo?force=true',
               '/openapi/v1/skills/owner/repo/skills/my-skill?force=true',
+            ]);
+          }
+        );
+      } finally {
+        rmSync(stateHome, { recursive: true, force: true });
+      }
+    }, 60000);
+
+    it('passes locked upstream sourceUrl to Hub update checks', async () => {
+      const fileDigest = 'sha256:skill';
+      const hubDigest = sha256(`SKILL.md\0${fileDigest}`);
+      const stateHome = mkdtempSync(join(tmpdir(), 'bzskills-state-'));
+      const requested: string[] = [];
+      const sourceDomain = 'example.com';
+      const encodedSourceUrl = encodeURIComponent(sourceDomain);
+
+      try {
+        await withCustomHubServer(
+          (req, res) => {
+            requested.push(req.url || '');
+            res.setHeader('content-type', 'application/json');
+            if (
+              req.url ===
+              `/openapi/v1/skills/vercel-labs/agent-skills?sourceDomain=${encodedSourceUrl}`
+            ) {
+              res.end(
+                JSON.stringify({
+                  owner: 'gitops-admin',
+                  repo: 'agent-skills',
+                  skills: [{ name: 'gitops-app-onboarding', description: 'GitOps onboarding' }],
+                })
+              );
+              return;
+            }
+            if (
+              req.url ===
+              `/openapi/v1/skills/vercel-labs/agent-skills/skills/gitops-app-onboarding?sourceDomain=${encodedSourceUrl}`
+            ) {
+              res.end(
+                JSON.stringify({
+                  name: 'gitops-app-onboarding',
+                  description: 'GitOps onboarding',
+                  files: [
+                    {
+                      path: 'SKILL.md',
+                      digest: fileDigest,
+                      contents:
+                        '---\nname: gitops-app-onboarding\ndescription: GitOps onboarding\n---\n\n# GitOps\n',
+                    },
+                  ],
+                })
+              );
+              return;
+            }
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: 'not found' }));
+          },
+          async (baseUrl) => {
+            writeGlobalLock(stateHome, {
+              'gitops-app-onboarding': {
+                source: 'vercel-labs/agent-skills',
+                sourceType: 'hub',
+                sourceUrl: `${baseUrl}/openapi/v1/skills/vercel-labs/agent-skills/skills/gitops-app-onboarding`,
+                sourceDomain,
+                skillFolderHash: hubDigest,
+                installedAt: '2026-01-01T00:00:00.000Z',
+                updatedAt: '2026-01-01T00:00:00.000Z',
+              },
+            });
+
+            const result = await runCliAsync(['check', '-g'], { XDG_STATE_HOME: stateHome });
+
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('All global skills are up to date');
+            expect(requested).toEqual([
+              `/openapi/v1/skills/vercel-labs/agent-skills?sourceDomain=${encodedSourceUrl}`,
+              `/openapi/v1/skills/vercel-labs/agent-skills/skills/gitops-app-onboarding?sourceDomain=${encodedSourceUrl}`,
             ]);
           }
         );

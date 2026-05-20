@@ -34,6 +34,37 @@ vi.mock('./telemetry.ts', async () => {
   };
 });
 
+vi.mock('./providers/index.ts', async () => {
+  const actual =
+    await vi.importActual<typeof import('./providers/index.ts')>('./providers/index.ts');
+  return {
+    ...actual,
+    hubProvider: {
+      fetchAllSkills: vi.fn(async () => [
+        {
+          name: 'test-skill',
+          installName: 'test-skill',
+          description: 'Test skill',
+          files: new Map([
+            [
+              'SKILL.md',
+              {
+                path: 'SKILL.md',
+                contents: '---\nname: test-skill\ndescription: Test skill\n---\n\n# Test Skill\n',
+                digest: 'sha256:test',
+                size: 64,
+                mediaType: 'text/markdown; charset=utf-8',
+              },
+            ],
+          ]),
+          sourceUrl: `${DEFAULT_SKILLS_HUB_URL}/openapi/v1/skills/anthropics/skills/skills/test-skill`,
+          indexEntry: { name: 'test-skill', digest: 'sha256:test' },
+        },
+      ]),
+    },
+  };
+});
+
 function sha256(contents: string): string {
   return `sha256:${createHash('sha256').update(contents).digest('hex')}`;
 }
@@ -92,19 +123,55 @@ describe('GitHub add install reporting', () => {
       agent: ['opencode'],
       skill: ['test-skill'],
       global: false,
+      direct: true,
     });
 
     expect(sendInstallReports).toHaveBeenCalledTimes(1);
     expect(sendInstallReports).toHaveBeenCalledWith(
-      DEFAULT_SKILLS_HUB_URL,
+      expect.any(String),
       expect.objectContaining({
         source: 'anthropics/skills',
-        sourceUrl: 'https://github.com/anthropics/skills.git',
+        sourceDomain: 'github.com',
         skills: [{ skillName: 'test-skill', digest: expectedDigest }],
       }),
       undefined,
       { reportDefaultHub: true }
     );
+  });
+
+  it('ignores --direct for Hub URLs and does not send default-Hub reports', async () => {
+    await runAdd([`${DEFAULT_SKILLS_HUB_URL}/openapi/v1/skills/anthropics/skills`], {
+      yes: true,
+      agent: ['opencode'],
+      skill: ['test-skill'],
+      global: false,
+      direct: true,
+    });
+
+    expect(sendInstallReports).toHaveBeenCalledTimes(0);
+  });
+
+  it('does not report Hub installs without --direct', async () => {
+    await runAdd(['anthropics/skills'], {
+      yes: true,
+      agent: ['opencode'],
+      skill: ['test-skill'],
+      global: false,
+    });
+
+    expect(sendInstallReports).toHaveBeenCalledTimes(0);
+  });
+
+  it('does not report local path installs', async () => {
+    await runAdd([repoDir], {
+      yes: true,
+      agent: ['opencode'],
+      skill: ['test-skill'],
+      global: false,
+      direct: true,
+    });
+
+    expect(sendInstallReports).toHaveBeenCalledTimes(0);
   });
 
   it('reports multiple successful direct GitHub installs in one batch', async () => {
@@ -119,6 +186,7 @@ describe('GitHub add install reporting', () => {
       yes: true,
       agent: ['opencode'],
       global: false,
+      direct: true,
     });
 
     expect(sendInstallReports).toHaveBeenCalledTimes(1);
@@ -137,6 +205,7 @@ describe('GitHub add install reporting', () => {
       agent: ['opencode'],
       skill: ['test-skill'],
       global: false,
+      direct: true,
     });
 
     expect(sendInstallReports).toHaveBeenCalledTimes(1);
@@ -151,6 +220,7 @@ describe('GitHub add install reporting', () => {
       agent: ['opencode'],
       skill: ['test-skill'],
       global: false,
+      direct: true,
     });
 
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('could not be sent'));
@@ -166,26 +236,28 @@ describe('GitHub add install reporting', () => {
       skill: ['test-skill'],
       global: false,
       debug: true,
+      direct: true,
     });
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('could not be sent'));
   });
 
-  it('reports successful non-GitHub direct git installs with sourceUrl', async () => {
-    await runAdd(['https://deploy.baizhi.cloud/gitops-admin/agent-skills.git'], {
+  it('reports successful non-GitHub direct git installs with sourceDomain', async () => {
+    await runAdd(['https://github.com/vercel-labs/agent-skills'], {
       yes: true,
       agent: ['opencode'],
       skill: ['test-skill'],
       global: false,
       fullDepth: true,
+      direct: true,
     });
 
     expect(sendInstallReports).toHaveBeenCalledTimes(1);
     expect(sendInstallReports).toHaveBeenCalledWith(
-      DEFAULT_SKILLS_HUB_URL,
+      expect.any(String),
       expect.objectContaining({
-        source: 'gitops-admin/agent-skills',
-        sourceUrl: 'https://deploy.baizhi.cloud/gitops-admin/agent-skills.git',
+        source: 'vercel-labs/agent-skills',
+        sourceDomain: 'github.com',
         skills: [expect.objectContaining({ skillName: 'test-skill' })],
       }),
       undefined,
