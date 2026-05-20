@@ -197,6 +197,63 @@ describe('HubProvider', () => {
     ]);
   });
 
+  it('passes sourceDomain to package, skill, and file requests', async () => {
+    const requestedUrls: string[] = [];
+    const sourceDomain = 'example.com';
+    const encoded = encodeURIComponent(sourceDomain);
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (
+        url ===
+        `https://hub.example.com/openapi/v1/skills/vercel-labs/agent-skills?sourceDomain=${encoded}`
+      ) {
+        return jsonResponse({
+          owner: 'vercel-labs',
+          repo: 'agent-skills',
+          skills: [{ name: 'gitops-app-onboarding', description: 'GitOps onboarding' }],
+        });
+      }
+      if (
+        url ===
+        `https://hub.example.com/openapi/v1/skills/vercel-labs/agent-skills/skills/gitops-app-onboarding?sourceDomain=${encoded}`
+      ) {
+        return jsonResponse({
+          name: 'gitops-app-onboarding',
+          description: 'GitOps onboarding',
+          files: [
+            {
+              path: 'SKILL.md',
+              url: 'https://hub.example.com/openapi/v1/skills/vercel-labs/agent-skills/files/skills/gitops-app-onboarding/SKILL.md',
+            },
+          ],
+        });
+      }
+      if (
+        url ===
+        `https://hub.example.com/openapi/v1/skills/vercel-labs/agent-skills/files/skills/gitops-app-onboarding/SKILL.md?sourceDomain=${encoded}`
+      ) {
+        return textResponse(
+          '---\nname: gitops-app-onboarding\ndescription: GitOps onboarding\n---\n\n# GitOps\n'
+        );
+      }
+      return textResponse('missing', 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const skills = await provider.fetchAllSkills(
+      'https://hub.example.com/openapi/v1/skills/vercel-labs/agent-skills',
+      { sourceDomain }
+    );
+
+    expect(skills.map((skill) => skill.installName)).toEqual(['gitops-app-onboarding']);
+    expect(requestedUrls).toEqual([
+      `https://hub.example.com/openapi/v1/skills/vercel-labs/agent-skills?sourceDomain=${encoded}`,
+      `https://hub.example.com/openapi/v1/skills/vercel-labs/agent-skills/skills/gitops-app-onboarding?sourceDomain=${encoded}`,
+      `https://hub.example.com/openapi/v1/skills/vercel-labs/agent-skills/files/skills/gitops-app-onboarding/SKILL.md?sourceDomain=${encoded}`,
+    ]);
+  });
+
   it('filters skills by Hub subpath', async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);

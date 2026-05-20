@@ -48,6 +48,7 @@ export interface HubRateLimiter {
 
 export interface HubFetchOptions {
   force?: boolean;
+  sourceDomain?: string;
   subpath?: string;
   skillNames?: string[];
   concurrency?: number;
@@ -106,9 +107,11 @@ function withHubQuery(
   queryOptions: { includeSkillNames?: boolean } = {}
 ): string {
   const names = queryOptions.includeSkillNames ? normalizedSkillNames(options.skillNames) : null;
-  if (!options.force && !names) return url;
+  const sourceDomain = options.sourceDomain?.trim();
+  if (!options.force && !sourceDomain && !names) return url;
   const parsed = new URL(url);
   if (options.force) parsed.searchParams.set('force', 'true');
+  if (sourceDomain) parsed.searchParams.set('sourceDomain', sourceDomain);
   if (names) {
     for (const name of names) {
       parsed.searchParams.append('skill', name);
