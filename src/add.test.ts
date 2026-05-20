@@ -468,6 +468,18 @@ describe('parseAddOptions', () => {
     expect(result.options.force).toBe(true);
   });
 
+  it('should parse --direct flag for source installs that bypass Hub', () => {
+    const result = parseAddOptions(['vercel-labs/agent-skills', '--direct']);
+    expect(result.source).toEqual(['vercel-labs/agent-skills']);
+    expect(result.options.direct).toBe(true);
+  });
+
+  it('should parse -d alias for --direct', () => {
+    const result = parseAddOptions(['vercel-labs/agent-skills', '-d']);
+    expect(result.source).toEqual(['vercel-labs/agent-skills']);
+    expect(result.options.direct).toBe(true);
+  });
+
   it('should parse --debug flag', () => {
     const result = parseAddOptions(['source', '--debug']);
     expect(result.source).toEqual(['source']);

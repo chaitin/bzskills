@@ -431,6 +431,9 @@ function parseNativeHubURL(input: string, fragmentSkillFilter?: string): ParsedS
       url: `${parsed.origin}/openapi/v1/skills/${owner}/${repo}`,
       owner,
       repo,
+      ...(parsed.searchParams.get('sourceDomain')
+        ? { sourceDomain: parsed.searchParams.get('sourceDomain')! }
+        : {}),
       ...(fragmentSkillFilter || skillName
         ? { skillFilter: fragmentSkillFilter || skillName }
         : {}),

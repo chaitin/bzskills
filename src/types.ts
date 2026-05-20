@@ -77,6 +77,8 @@ export interface ParsedSource {
   ref?: string;
   /** Skill name extracted from @skill syntax (e.g., owner/repo@skill-name) */
   skillFilter?: string;
+  /** Upstream source domain forwarded to Skills Hub for external packages. */
+  sourceDomain?: string;
 }
 
 /**

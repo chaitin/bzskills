@@ -292,7 +292,7 @@ async function sendDirectGitInstallReports(
     hubUrl,
     {
       source,
-      sourceUrl,
+      sourceDomain: sourceDomain(sourceUrl),
       skills: reportSkills,
     },
     undefined,
@@ -551,8 +551,57 @@ export interface AddOptions {
   fullDepth?: boolean;
   copy?: boolean;
   force?: boolean;
+  direct?: boolean;
   debug?: boolean;
   dangerouslyAcceptOpenclawRisks?: boolean;
+}
+
+interface HubInstallRequest {
+  url: string;
+  owner: string;
+  repo: string;
+  sourceIdentifier: string;
+  sourceDomain?: string;
+  subpath?: string;
+}
+
+function sourceDomain(url: string): string | undefined {
+  try {
+    return new URL(url).host;
+  } catch {
+    return undefined;
+  }
+}
+
+function hubInstallRequest(parsed: ReturnType<typeof parseSource>): HubInstallRequest | null {
+  if (parsed.type === 'hub' && parsed.owner && parsed.repo) {
+    return {
+      url: parsed.url,
+      owner: parsed.owner,
+      repo: parsed.repo,
+      sourceIdentifier: `${parsed.owner}/${parsed.repo}`,
+      ...(parsed.sourceDomain ? { sourceDomain: parsed.sourceDomain } : {}),
+      ...(parsed.subpath ? { subpath: parsed.subpath } : {}),
+    };
+  }
+
+  if (parsed.type === 'local' || parsed.type === 'well-known') return null;
+
+  const ownerRepo = getOwnerRepo(parsed);
+  const coordinates = ownerRepo ? parseOwnerRepo(ownerRepo) : null;
+  if (!coordinates) return null;
+
+  const domain = parsed.type === 'github' ? undefined : sourceDomain(parsed.url);
+  if (parsed.type !== 'github' && !domain) return null;
+
+  return {
+    url: `${getSkillsHubUrl()}/openapi/v1/skills/${coordinates.owner}/${coordinates.repo}`,
+    owner: coordinates.owner,
+    repo: coordinates.repo,
+    sourceIdentifier: `${coordinates.owner}/${coordinates.repo}`,
+    ...(domain ? { sourceDomain: domain } : {}),
+    ...(parsed.subpath ? { subpath: parsed.subpath } : {}),
+  };
 }
 
 function logDebug(message: string): void {
@@ -614,12 +663,8 @@ function logHubNoSkillsDebug(
   );
 }
 
-function normalizeHubUrl(url: string): string {
-  return url.replace(/\/$/, '');
-}
-
-function isDefaultInstallReportHub(url: string): boolean {
-  return normalizeHubUrl(url) === normalizeHubUrl(getSkillsHubUrl());
+function isHTTPSource(input: string): boolean {
+  return input.startsWith('http://') || input.startsWith('https://');
 }
 
 export function hubHTTPSourceOptions(url: string): {
@@ -672,6 +717,7 @@ async function handleWellKnownSkills(
     ref?: string;
     requestHubUrl?: string;
     sourceUrl?: string;
+    sourceDomain?: string;
     skills?: WellKnownSkill[];
     diagnostic?: HubFetchDiagnostic;
     discoveryLabel?: string;
@@ -1021,29 +1067,6 @@ async function handleWellKnownSkills(
     });
   }
 
-  if (sourceOptions.requestHubUrl) {
-    const reported = await sendInstallReports(sourceOptions.requestHubUrl, {
-      source: sourceIdentifier,
-      skills: selectedSkills.map((skill) => ({
-        skillName: skill.installName,
-        digest: skill.indexEntry.digest || skill.sourceUrl,
-      })),
-    });
-    if (reported) {
-      p.log.message(
-        pc.dim(
-          `Reported install for ${selectedSkills.length} skill${selectedSkills.length !== 1 ? 's' : ''} to ${sourceOptions.requestHubUrl}`
-        )
-      );
-    } else if (options.debug && !isDefaultInstallReportHub(sourceOptions.requestHubUrl)) {
-      p.log.warn(
-        pc.yellow(
-          `Install reports for ${selectedSkills.length} skill${selectedSkills.length !== 1 ? 's' : ''} could not be sent to ${sourceOptions.requestHubUrl}; installation was not affected.`
-        )
-      );
-    }
-  }
-
   // Add to skill lock file for update tracking (only for global installs)
   if (successful.length > 0 && installGlobally) {
     const successfulSkillNames = new Set(successful.map((r) => r.skill));
@@ -1054,6 +1077,7 @@ async function handleWellKnownSkills(
             source: sourceIdentifier,
             sourceType,
             sourceUrl: skill.sourceUrl,
+            ...(sourceOptions.sourceDomain ? { sourceDomain: sourceOptions.sourceDomain } : {}),
             ...(sourceOptions.ref ? { ref: sourceOptions.ref } : {}),
             skillFolderHash: sourceType === 'hub' ? (skill.indexEntry.digest ?? '') : '',
           });
@@ -1080,6 +1104,7 @@ async function handleWellKnownSkills(
                 source: sourceIdentifier,
                 sourceType,
                 ...(sourceOptions.sourceUrl ? { sourceUrl: sourceOptions.sourceUrl } : {}),
+                ...(sourceOptions.sourceDomain ? { sourceDomain: sourceOptions.sourceDomain } : {}),
                 ...(sourceOptions.ref ? { ref: sourceOptions.ref } : {}),
                 computedHash,
               },
@@ -1205,7 +1230,17 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     const spinner = p.spinner();
 
     spinner.start('Parsing source...');
-    const parsed = parseSource(source);
+    const initialParsed = parseSource(source);
+    const parsed =
+      options.direct &&
+      initialParsed.type === 'hub' &&
+      initialParsed.owner &&
+      initialParsed.repo &&
+      !isHTTPSource(source)
+        ? parseSource(
+            `github:${initialParsed.owner}/${initialParsed.repo}${initialParsed.subpath ? `/${initialParsed.subpath}` : ''}${initialParsed.skillFilter ? `@${initialParsed.skillFilter}` : ''}`
+          )
+        : initialParsed;
     spinner.stop(
       `Source: ${parsed.type === 'local' ? parsed.localPath! : parsed.url}${parsed.ref ? ` @ ${pc.yellow(parsed.ref)}` : ''}${parsed.subpath ? ` (${parsed.subpath})` : ''}${parsed.skillFilter ? ` ${pc.dim('@')}${pc.cyan(parsed.skillFilter)}` : ''}`
     );
@@ -1239,14 +1274,16 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       process.exit(1);
     }
 
-    // Handle Hub shorthand through the native Hub API.
-    if (parsed.type === 'hub' && parsed.owner && parsed.repo) {
-      const hubUrl = new URL(parsed.url).origin;
+    // Default to Skills Hub whenever the source can be represented as owner/repo.
+    const hubRequest = options.direct && parsed.type !== 'hub' ? null : hubInstallRequest(parsed);
+    if (hubRequest) {
+      const hubUrl = new URL(hubRequest.url).origin;
       let hubDiagnostic: HubFetchDiagnostic | undefined;
       spinner.start('Fetching skills from Skills Hub...');
-      const hubSkills = await hubProvider.fetchAllSkills(parsed.url, {
+      const hubSkills = await hubProvider.fetchAllSkills(hubRequest.url, {
         force: options.force,
-        subpath: parsed.subpath,
+        sourceDomain: hubRequest.sourceDomain,
+        subpath: hubRequest.subpath,
         skillNames: options.skill,
         onDiagnostic: (diagnostic) => {
           hubDiagnostic = diagnostic;
@@ -1260,11 +1297,12 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       spinner.stop(
         `Fetched ${pc.green(hubSkills.length)} skill${hubSkills.length !== 1 ? 's' : ''}`
       );
-      await handleWellKnownSkills(source, parsed.url, options, spinner, {
+      await handleWellKnownSkills(source, hubRequest.url, options, spinner, {
         sourceType: 'hub',
-        sourceIdentifier: `${parsed.owner}/${parsed.repo}`,
+        sourceIdentifier: hubRequest.sourceIdentifier,
         requestHubUrl: hubUrl,
-        sourceUrl: parsed.url,
+        sourceUrl: hubRequest.url,
+        sourceDomain: hubRequest.sourceDomain,
         skills: hubSkills,
         diagnostic: hubDiagnostic,
         discoveryLabel: 'Discovering skills from Skills Hub...',
@@ -2158,6 +2196,8 @@ export function parseAddOptions(args: string[]): { source: string[]; options: Ad
       options.copy = true;
     } else if (arg === '-f' || arg === '--force') {
       options.force = true;
+    } else if (arg === '-d' || arg === '--direct') {
+      options.direct = true;
     } else if (arg === '--debug') {
       options.debug = true;
     } else if (arg === '--dangerously-accept-openclaw-risks') {

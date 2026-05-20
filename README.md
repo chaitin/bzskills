@@ -28,11 +28,17 @@ npx bzskills add baizhicloud/foo@my-skill
 # Use a custom Skills Hub
 SKILLS_HUB_URL=https://hub.example.com npx bzskills add alice/repo --skill react-skill
 
+# Non-GitHub git URLs use Hub by default with their source host
+npx bzskills add https://github.com/vercel-labs/agent-skills --skill gitops-app-onboarding
+
 # Force-refresh a Hub package before installing
 npx bzskills add alice/repo --force
 
 # Explicit GitHub shorthand (owner/repo)
 npx bzskills add github:vercel-labs/agent-skills
+
+# Bypass Hub and install directly from the source
+npx bzskills add https://github.com/vercel-labs/agent-skills --direct
 
 # Full GitHub URL
 npx bzskills add https://github.com/vercel-labs/agent-skills
@@ -59,6 +65,7 @@ npx bzskills add ./my-local-skills
 | `-s, --skill <skills...>` | Install specific skills by name (use `'*'` for all skills)                                                                                         |
 | `-l, --list`              | List available skills without installing                                                                                                           |
 | `-f, --force`             | Force-refresh Hub-backed package metadata before installing                                                                                        |
+| `-d, --direct`            | Install directly from the source instead of resolving through Skills Hub                                                                           |
 | `--debug`                 | Print detailed skill discovery diagnostics when no skills are found                                                                                |
 | `--copy`                  | Copy files instead of symlinking to agent directories                                                                                              |
 | `-y, --yes`               | Skip all confirmation prompts                                                                                                                      |
