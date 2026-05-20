@@ -389,7 +389,7 @@ describe('skills CLI', () => {
             ) {
               res.end(
                 JSON.stringify({
-                  owner: 'gitops-admin',
+                  owner: 'vercel-labs',
                   repo: 'agent-skills',
                   skills: [
                     {
@@ -449,6 +449,73 @@ describe('skills CLI', () => {
               sourceType: 'hub',
               sourceUrl: `${baseUrl}/openapi/v1/skills/vercel-labs/agent-skills`,
               sourceDomain,
+            });
+          }
+        );
+      } finally {
+        rmSync(projectDir, { recursive: true, force: true });
+      }
+    }, 60000);
+
+    it('routes GitLab subgroup URLs through Hub with encoded owner by default', async () => {
+      const projectDir = mkdtempSync(join(tmpdir(), 'bzskills-project-'));
+      const requested: string[] = [];
+      const skillContent =
+        '---\nname: code-review\ndescription: Code review\n---\n\n# Code Review\n';
+
+      try {
+        await withCustomHubServer(
+          (req, res) => {
+            requested.push(req.url || '');
+            res.setHeader('content-type', 'application/json');
+            if (req.url === '/openapi/v1/skills/gitlab-org%2Fai/skills?sourceDomain=gitlab.com') {
+              res.end(
+                JSON.stringify({
+                  owner: 'gitlab-org/ai',
+                  repo: 'skills',
+                  skills: [{ name: 'code-review', description: 'Code review' }],
+                })
+              );
+              return;
+            }
+            if (
+              req.url ===
+              '/openapi/v1/skills/gitlab-org%2Fai/skills/skills/code-review?sourceDomain=gitlab.com'
+            ) {
+              res.end(
+                JSON.stringify({
+                  name: 'code-review',
+                  description: 'Code review',
+                  files: [{ path: 'SKILL.md', digest: 'sha256:skill', contents: skillContent }],
+                })
+              );
+              return;
+            }
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: 'not found' }));
+          },
+          async (baseUrl) => {
+            const result = await runCliAsync(
+              ['add', 'https://gitlab.com/gitlab-org/ai/skills', '-y', '--agent', 'claude-code'],
+              {
+                SKILLS_HUB_URL: baseUrl,
+                XDG_STATE_HOME: join(projectDir, '.state'),
+              },
+              projectDir
+            );
+
+            expect(result.exitCode).toBe(0);
+            expect(requested).toEqual([
+              '/openapi/v1/skills/gitlab-org%2Fai/skills?sourceDomain=gitlab.com',
+              '/openapi/v1/skills/gitlab-org%2Fai/skills/skills/code-review?sourceDomain=gitlab.com',
+            ]);
+
+            const lock = JSON.parse(readFileSync(join(projectDir, 'skills-lock.json'), 'utf-8'));
+            expect(lock.skills['code-review']).toMatchObject({
+              source: 'gitlab-org/ai/skills',
+              sourceType: 'hub',
+              sourceUrl: `${baseUrl}/openapi/v1/skills/gitlab-org%2Fai/skills`,
+              sourceDomain: 'gitlab.com',
             });
           }
         );
@@ -640,7 +707,7 @@ describe('skills CLI', () => {
             ) {
               res.end(
                 JSON.stringify({
-                  owner: 'gitops-admin',
+                  owner: 'vercel-labs',
                   repo: 'agent-skills',
                   skills: [{ name: 'gitops-app-onboarding', description: 'GitOps onboarding' }],
                 })

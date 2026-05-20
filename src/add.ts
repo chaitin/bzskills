@@ -573,6 +573,15 @@ function sourceDomain(url: string): string | undefined {
   }
 }
 
+function hubCoordinates(ownerRepo: string): { owner: string; repo: string } | null {
+  const parts = ownerRepo.split('/').filter(Boolean);
+  if (parts.length < 2) return null;
+
+  const repo = parts.at(-1)!;
+  const owner = parts.slice(0, -1).join('/');
+  return { owner, repo };
+}
+
 function hubInstallRequest(parsed: ReturnType<typeof parseSource>): HubInstallRequest | null {
   if (parsed.type === 'hub' && parsed.owner && parsed.repo) {
     return {
@@ -588,14 +597,14 @@ function hubInstallRequest(parsed: ReturnType<typeof parseSource>): HubInstallRe
   if (parsed.type === 'local' || parsed.type === 'well-known') return null;
 
   const ownerRepo = getOwnerRepo(parsed);
-  const coordinates = ownerRepo ? parseOwnerRepo(ownerRepo) : null;
+  const coordinates = ownerRepo ? hubCoordinates(ownerRepo) : null;
   if (!coordinates) return null;
 
   const domain = parsed.type === 'github' ? undefined : sourceDomain(parsed.url);
   if (parsed.type !== 'github' && !domain) return null;
 
   return {
-    url: `${getSkillsHubUrl()}/openapi/v1/skills/${coordinates.owner}/${coordinates.repo}`,
+    url: `${getSkillsHubUrl()}/openapi/v1/skills/${encodeURIComponent(coordinates.owner)}/${encodeURIComponent(coordinates.repo)}`,
     owner: coordinates.owner,
     repo: coordinates.repo,
     sourceIdentifier: `${coordinates.owner}/${coordinates.repo}`,
@@ -1893,22 +1902,22 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
     // Only track if we have a valid remote source and it's not a private repo
     if (normalizedSource) {
+      if (
+        (parsed.type === 'github' || parsed.type === 'gitlab' || parsed.type === 'git') &&
+        successful.length > 0
+      ) {
+        const successfulSkillNames = new Set(successful.map((r) => r.skill));
+        await sendDirectGitInstallReports(
+          selectedSkills,
+          successfulSkillNames,
+          normalizedSource,
+          parsed.url,
+          options.debug
+        );
+      }
+
       const ownerRepo = parseOwnerRepo(normalizedSource);
       if (ownerRepo) {
-        if (
-          (parsed.type === 'github' || parsed.type === 'gitlab' || parsed.type === 'git') &&
-          successful.length > 0
-        ) {
-          const successfulSkillNames = new Set(successful.map((r) => r.skill));
-          await sendDirectGitInstallReports(
-            selectedSkills,
-            successfulSkillNames,
-            normalizedSource,
-            parsed.url,
-            options.debug
-          );
-        }
-
         // Check if repo is private - skip legacy local tracking for private repos
         const isPrivate = await isRepoPrivate(ownerRepo.owner, ownerRepo.repo);
         // Only send legacy local tracking if repo is public (isPrivate === false)

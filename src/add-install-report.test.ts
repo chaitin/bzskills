@@ -264,4 +264,27 @@ describe('GitHub add install reporting', () => {
       { reportDefaultHub: true }
     );
   });
+
+  it('reports successful direct GitLab installs with multi-segment owners', async () => {
+    await runAdd(['https://gitlab.com/gitlab-org/ai/skills'], {
+      yes: true,
+      agent: ['opencode'],
+      skill: ['test-skill'],
+      global: false,
+      fullDepth: true,
+      direct: true,
+    });
+
+    expect(sendInstallReports).toHaveBeenCalledTimes(1);
+    expect(sendInstallReports).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        source: 'gitlab-org/ai/skills',
+        sourceDomain: 'gitlab.com',
+        skills: [expect.objectContaining({ skillName: 'test-skill' })],
+      }),
+      undefined,
+      { reportDefaultHub: true }
+    );
+  });
 });
