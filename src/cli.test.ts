@@ -179,6 +179,62 @@ describe('skills CLI', () => {
   });
 
   describe('Hub update checks', () => {
+    it('keeps sourceDomain in find results for same source repositories', async () => {
+      await withCustomHubServer(
+        (req, res) => {
+          res.setHeader('content-type', 'application/json');
+          if (
+            req.url ===
+            '/openapi/search?q=https%3A%2F%2Fgitlab.com%2Fgitlab-org%2Fai%2Fskills&limit=10'
+          ) {
+            res.end(
+              JSON.stringify({
+                skills: [
+                  {
+                    id: 'gitlab-org%2Fai/skills/skills/code-review',
+                    name: 'code-review',
+                    installs: 2,
+                    source: 'https://gitlab.com/gitlab-org/ai/skills',
+                    sourceDomain: 'gitlab.com',
+                  },
+                  {
+                    id: 'gitlab-org%2Fai/skills/skills/code-review',
+                    name: 'code-review',
+                    installs: 1,
+                    source: 'https://gitlab.com/gitlab-org/ai/skills',
+                    source_domain: 'mirror.example.com',
+                  },
+                ],
+              })
+            );
+            return;
+          }
+          res.statusCode = 404;
+          res.end(JSON.stringify({ error: 'not found' }));
+        },
+        async (baseUrl) => {
+          const result = await runCliAsync(['find', 'https://gitlab.com/gitlab-org/ai/skills'], {
+            SKILLS_API_URL: baseUrl,
+          });
+
+          expect(result.exitCode).toBe(0);
+          const stdout = stripAnsi(result.stdout);
+          expect(stdout).toContain(
+            'https://gitlab.com/gitlab-org/ai/skills?sourceDomain=gitlab.com --skill code-review 2 installs'
+          );
+          expect(stdout).toContain(
+            'https://gitlab.com/gitlab-org/ai/skills?sourceDomain=mirror.example.com --skill code-review 1 install'
+          );
+          expect(stdout).toContain(
+            `${baseUrl}/openapi/v1/skills/gitlab-org%2Fai/skills/skills/code-review?sourceDomain=gitlab.com`
+          );
+          expect(stdout).toContain(
+            `${baseUrl}/openapi/v1/skills/gitlab-org%2Fai/skills/skills/code-review?sourceDomain=mirror.example.com`
+          );
+        }
+      );
+    }, 60000);
+
     it('stores native Hub sourceUrl in project lock for configured Hub installs', async () => {
       const projectDir = mkdtempSync(join(tmpdir(), 'bzskills-project-'));
       try {

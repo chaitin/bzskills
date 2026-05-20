@@ -19,27 +19,56 @@ function formatInstalls(count: number): string {
   return `${count} install${count === 1 ? '' : 's'}`;
 }
 
-function formatInstallSource(source: string, skillName: string): string {
+function appendSourceDomainParam(url: string, sourceDomain?: string): string {
+  if (!sourceDomain) return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}sourceDomain=${encodeURIComponent(sourceDomain)}`;
+}
+
+function formatSourceArgument(source: string, sourceDomain?: string): string {
   if (source.startsWith('http://') || source.startsWith('https://')) {
-    return `${source} --skill ${skillName}`;
+    return appendSourceDomainParam(source, sourceDomain);
+  }
+  return source;
+}
+
+function formatInstallSource(source: string, skillName: string, sourceDomain?: string): string {
+  if (source.startsWith('http://') || source.startsWith('https://')) {
+    return `${formatSourceArgument(source, sourceDomain)} --skill ${skillName}`;
   }
   return `${source}@${skillName}`;
 }
 
-function formatSkillMetadataURL(slug: string): string {
+function formatSkillMetadataURL(slug: string, sourceDomain?: string): string {
   const parts = slug.split('/');
-  if (parts.length >= 3) {
+  let url: string;
+  if (parts.length === 3 || parts[2] === 'skills') {
     const [owner, repo, ...skillParts] = parts;
-    return `${SEARCH_API_BASE.replace(/\/$/, '')}/openapi/v1/skills/${owner}/${repo}/skills/${skillParts.join('/')}`;
+    const skillPath = skillParts[0] === 'skills' ? skillParts.slice(1) : skillParts;
+    url = `${SEARCH_API_BASE.replace(/\/$/, '')}/openapi/v1/skills/${owner}/${repo}/skills/${skillPath.join('/')}`;
+  } else {
+    url = `${SEARCH_API_BASE.replace(/\/$/, '')}/openapi/v1/skills/${slug}`;
   }
-  return `${SEARCH_API_BASE.replace(/\/$/, '')}/openapi/v1/skills/${slug}`;
+  return appendSourceDomainParam(url, sourceDomain);
 }
 
 export interface SearchSkill {
   name: string;
   slug: string;
   source: string;
+  sourceDomain?: string;
   installs: number;
+}
+
+function searchSkillSourceDomain(skill: {
+  sourceDomain?: string;
+  source_domain?: string;
+  sourceHost?: string;
+  source_host?: string;
+}): string {
+  return sanitizeMetadata(
+    skill.sourceDomain || skill.source_domain || skill.sourceHost || skill.source_host || ''
+  );
 }
 
 // Search via API
@@ -56,16 +85,24 @@ export async function searchSkillsAPI(query: string): Promise<SearchSkill[]> {
         name: string;
         installs: number;
         source: string;
+        sourceDomain?: string;
+        source_domain?: string;
+        sourceHost?: string;
+        source_host?: string;
       }>;
     };
 
     return data.skills
-      .map((skill) => ({
-        name: sanitizeMetadata(skill.name),
-        slug: sanitizeMetadata(skill.id),
-        source: sanitizeMetadata(skill.source || ''),
-        installs: skill.installs,
-      }))
+      .map((skill) => {
+        const sourceDomain = searchSkillSourceDomain(skill);
+        return {
+          name: sanitizeMetadata(skill.name),
+          slug: sanitizeMetadata(skill.id),
+          source: sanitizeMetadata(skill.source || ''),
+          ...(sourceDomain ? { sourceDomain } : {}),
+          installs: skill.installs,
+        };
+      })
       .sort((a, b) => (b.installs || 0) - (a.installs || 0));
   } catch {
     return [];
@@ -309,11 +346,11 @@ ${DIM}  2) npx bzskills add <source> --skill <skill>${RESET}`;
     for (const skill of results.slice(0, 6)) {
       const pkg = skill.source || skill.slug;
       const installs = formatInstalls(skill.installs);
-      const installSource = formatInstallSource(pkg, skill.name);
+      const installSource = formatInstallSource(pkg, skill.name, skill.sourceDomain);
       console.log(
         `${TEXT}${installSource}${RESET}${installs ? ` ${CYAN}${installs}${RESET}` : ''}`
       );
-      console.log(`${DIM}└ ${formatSkillMetadataURL(skill.slug)}${RESET}`);
+      console.log(`${DIM}└ ${formatSkillMetadataURL(skill.slug, skill.sourceDomain)}${RESET}`);
       console.log();
     }
     return;
@@ -342,14 +379,15 @@ ${DIM}  2) npx bzskills add <source> --skill <skill>${RESET}`;
 
   // Use source (owner/repo) and skill name for installation
   const pkg = selected.source || selected.slug;
+  const installPkg = formatSourceArgument(pkg, selected.sourceDomain);
   const skillName = selected.name;
 
   console.log();
-  console.log(`${TEXT}Installing ${BOLD}${skillName}${RESET} from ${DIM}${pkg}${RESET}...`);
+  console.log(`${TEXT}Installing ${BOLD}${skillName}${RESET} from ${DIM}${installPkg}${RESET}...`);
   console.log();
 
   // Run add directly since we're in the same CLI
-  const { source, options } = parseAddOptions([pkg, '--skill', skillName]);
+  const { source, options } = parseAddOptions([installPkg, '--skill', skillName]);
   await runAdd(source, options);
 
   console.log();
@@ -357,7 +395,7 @@ ${DIM}  2) npx bzskills add <source> --skill <skill>${RESET}`;
   const info = getOwnerRepoFromString(pkg);
   if (info && (await isRepoPublic(info.owner, info.repo))) {
     console.log(
-      `${DIM}View the skill at${RESET} ${TEXT}${formatSkillMetadataURL(selected.slug)}${RESET}`
+      `${DIM}View the skill at${RESET} ${TEXT}${formatSkillMetadataURL(selected.slug, selected.sourceDomain)}${RESET}`
     );
   } else {
     console.log(`${DIM}Discover more skills at${RESET} ${TEXT}${SEARCH_API_BASE}${RESET}`);
