@@ -2,6 +2,8 @@ export interface UpdateSourceEntry {
   source: string;
   sourceType?: string;
   sourceUrl: string;
+  sourceDomain?: string;
+  upstreamSourceUrl?: string;
   ref?: string;
   skillPath?: string;
 }
@@ -9,6 +11,8 @@ export interface UpdateSourceEntry {
 export interface LocalUpdateSourceEntry {
   source: string;
   sourceUrl?: string;
+  sourceDomain?: string;
+  upstreamSourceUrl?: string;
   sourceType?: string;
   ref?: string;
 }
@@ -18,6 +22,40 @@ export function formatSourceInput(sourceUrl: string, ref?: string): string {
     return sourceUrl;
   }
   return `${sourceUrl}#${ref}`;
+}
+
+export function legacySourceDomain(sourceUrl?: string): string | undefined {
+  if (!sourceUrl) return undefined;
+  try {
+    return new URL(sourceUrl).host;
+  } catch {
+    return sourceUrl;
+  }
+}
+
+function resolvedSourceDomain(entry: {
+  sourceDomain?: string;
+  upstreamSourceUrl?: string;
+}): string | undefined {
+  return entry.sourceDomain ?? legacySourceDomain(entry.upstreamSourceUrl);
+}
+
+function sourceDomainParam(entry: { sourceDomain?: string; upstreamSourceUrl?: string }): string {
+  const domain = resolvedSourceDomain(entry);
+  return domain ? `?sourceDomain=${encodeURIComponent(domain)}` : '';
+}
+
+function nativeHubInstallSource(
+  entry: { source: string; sourceUrl?: string; sourceDomain?: string; upstreamSourceUrl?: string },
+  skillName?: string
+): string {
+  if (!resolvedSourceDomain(entry) || !entry.sourceUrl) {
+    return formatHubSkillSource(entry.source, skillName);
+  }
+
+  const packageUrl = entry.sourceUrl.replace(/\/skills\/[^/?#]+(?:[?#].*)?$/, '');
+  const skillUrl = skillName ? `${packageUrl}/skills/${encodeURIComponent(skillName)}` : packageUrl;
+  return `${skillUrl}${sourceDomainParam(entry)}`;
 }
 
 function formatHubSkillSource(source: string, skillName?: string): string {
@@ -30,7 +68,7 @@ function formatHubSkillSource(source: string, skillName?: string): string {
  */
 export function buildUpdateInstallSource(entry: UpdateSourceEntry, skillName?: string): string {
   if (entry.sourceType === 'hub') {
-    return formatHubSkillSource(entry.source, skillName);
+    return nativeHubInstallSource(entry, skillName);
   }
 
   if (!entry.skillPath) {
@@ -62,7 +100,7 @@ export function buildUpdateInstallSource(entry: UpdateSourceEntry, skillName?: s
  */
 export function buildLocalUpdateSource(entry: LocalUpdateSourceEntry, skillName?: string): string {
   if (entry.sourceType === 'hub') {
-    return formatHubSkillSource(entry.source, skillName);
+    return nativeHubInstallSource(entry, skillName);
   }
 
   if (entry.sourceUrl) {

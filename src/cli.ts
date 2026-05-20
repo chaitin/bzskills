@@ -22,6 +22,7 @@ import {
   buildLocalUpdateSource,
   formatSourceInput,
   hubEnvFromSourceUrl,
+  legacySourceDomain,
 } from './update-source.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -142,6 +143,7 @@ ${BOLD}Add Options:${RESET}
   -l, --list             List available skills in the repository without installing
   -y, --yes              Skip confirmation prompts
   -f, --force            Force refresh through Skills Hub when supported
+  -d, --direct           Install directly from the source instead of Skills Hub
   --debug                Print detailed skill discovery diagnostics on failure
   --copy                 Copy files instead of symlinking to agent directories
   --all                  Shorthand for --skill '*' --agent '*' -y
@@ -299,6 +301,8 @@ interface SkillLockEntry {
   source: string;
   sourceType: string;
   sourceUrl: string;
+  sourceDomain?: string;
+  upstreamSourceUrl?: string;
   ref?: string;
   skillPath?: string;
   /** GitHub tree SHA or Hub file-set digest for the entire skill folder (v3) */
@@ -689,7 +693,10 @@ async function updateGlobalSkills(
           continue;
         }
 
-        const skills = await hubProvider.fetchAllSkills(packageUrl, { force });
+        const skills = await hubProvider.fetchAllSkills(packageUrl, {
+          force,
+          sourceDomain: entry.sourceDomain ?? legacySourceDomain(entry.upstreamSourceUrl),
+        });
         const latestDigest = skills.find((skill) => skill.installName === skillName)?.indexEntry
           .digest;
         if (!latestDigest) {
@@ -761,6 +768,11 @@ async function updateGlobalSkills(
     }
     const addArgs = [cliEntry, 'add', installUrl, '-g', '-y'];
     if (force && update.entry.sourceType === 'hub') addArgs.push('--force');
+    if (
+      update.entry.sourceType === 'hub' &&
+      (update.entry.sourceDomain || update.entry.upstreamSourceUrl)
+    )
+      addArgs.push('--skill', update.name);
     const result = spawnSync(process.execPath, addArgs, {
       stdio: ['inherit', 'pipe', 'pipe'],
       encoding: 'utf-8',
@@ -823,6 +835,11 @@ async function updateProjectSkills(
     // Re-clone without -g to install at project scope
     const addArgs = [cliEntry, 'add', installUrl, '-y'];
     if (force && skill.entry.sourceType === 'hub') addArgs.push('--force');
+    if (
+      skill.entry.sourceType === 'hub' &&
+      (skill.entry.sourceDomain || skill.entry.upstreamSourceUrl)
+    )
+      addArgs.push('--skill', skill.name);
     const result = spawnSync(process.execPath, addArgs, {
       stdio: ['inherit', 'pipe', 'pipe'],
       encoding: 'utf-8',

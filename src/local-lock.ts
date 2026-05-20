@@ -17,6 +17,10 @@ export interface LocalSkillLockEntry {
   source: string;
   /** Original install URL when source alone would lose path information. */
   sourceUrl?: string;
+  /** Upstream source domain for Hub-backed packages that are not fetched by owner/repo defaults. */
+  sourceDomain?: string;
+  /** Legacy upstream source URL from older lock files. */
+  upstreamSourceUrl?: string;
   /** Branch or tag ref used for installation */
   ref?: string;
   /** The provider/source type (e.g., "github", "hub", "node_modules", "local") */

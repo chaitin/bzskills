@@ -75,6 +75,21 @@ describe('update-source', () => {
       );
       expect(result).toBe('owner/repo@my-skill');
     });
+
+    it('keeps upstream sourceUrl on Hub update sources', () => {
+      const result = buildUpdateInstallSource(
+        {
+          source: 'owner/repo',
+          sourceType: 'hub',
+          sourceUrl: 'https://hub.example.com/openapi/v1/skills/owner/repo/skills/my-skill',
+          sourceDomain: 'example.com',
+        },
+        'my-skill'
+      );
+      expect(result).toBe(
+        'https://hub.example.com/openapi/v1/skills/owner/repo/skills/my-skill?sourceDomain=example.com'
+      );
+    });
   });
 
   describe('buildLocalUpdateSource', () => {
@@ -87,6 +102,21 @@ describe('update-source', () => {
         'my-skill'
       );
       expect(result).toBe('owner/repo@my-skill');
+    });
+
+    it('keeps upstream sourceUrl on local Hub update sources', () => {
+      const result = buildLocalUpdateSource(
+        {
+          source: 'owner/repo',
+          sourceType: 'hub',
+          sourceUrl: 'https://hub.example.com/openapi/v1/skills/owner/repo/skills/my-skill',
+          sourceDomain: 'example.com',
+        },
+        'my-skill'
+      );
+      expect(result).toBe(
+        'https://hub.example.com/openapi/v1/skills/owner/repo/skills/my-skill?sourceDomain=example.com'
+      );
     });
 
     it('preserves non-Hub local update source behavior', () => {

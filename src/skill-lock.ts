@@ -18,6 +18,8 @@ export interface SkillLockEntry {
   sourceType: string;
   /** The original URL used to install the skill (for re-fetching updates) */
   sourceUrl: string;
+  /** Upstream source domain for Hub-backed packages that are not fetched by owner/repo defaults. */
+  sourceDomain?: string;
   /** Branch or tag ref used for installation (for ref-aware updates) */
   ref?: string;
   /** Subpath within the source repo, if applicable */
